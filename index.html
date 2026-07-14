@@ -541,8 +541,10 @@ function calcularRegistro(row, hoy){
   const termino = parseFecha(g('Fecha Termino Vigencia'));
   // Envío/Retorno de Tarjeta 01: se acepta el nombre de columna con o sin acento
   const buscarCampo = (claves) => { for(const k of claves){ if(row[k]!==undefined && row[k]!=='') return row[k]; } return ''; };
-  const envioTarjeta   = String(buscarCampo(['Envio Tarjeta 01','Envío Tarjeta 01'])).trim();
-  const retornoTarjeta = String(buscarCampo(['Retorno Tarjeta 01','Retorno de Tarjeta 01'])).trim();
+  // se conserva el valor crudo (puede venir como Date de Excel) para que
+  // fmtCampoTexto lo imprima como fecha y no como "Fri Jul 03 2026 00:00:36 GMT-0600"
+  const envioTarjeta   = buscarCampo(['Envio Tarjeta 01','Envío Tarjeta 01']);
+  const retornoTarjeta = buscarCampo(['Retorno Tarjeta 01','Retorno de Tarjeta 01']);
 
   // pagos: se toman del índice de "Pagos Historicos" ligado por IdPoliza.
   // Si no se cargó esa hoja, PAGOS_IDX contiene el respaldo de columnas 01-20.
@@ -617,33 +619,61 @@ let RAW_ROWS=null;
 let PAGOS_IDX=null;         // índice de pagos por IdPoliza
 let PAGOS_FUENTE='';        // 'historicos' | 'respaldo' | 'ninguna'
 let PAGOS_TOTAL=0;
+let PAGOS_DETALLE=null;     // pagos tomados de cada hoja
 let ARCHIVO_NOMBRE='';      // nombre del último archivo cargado
 let ULTIMA_CARGA=null;      // Date de la última carga (para "Cargado 09:14")
 
-// Construye el índice de pagos desde la hoja "Pagos Historicos".
-// Devuelve {idx, total} o null si la hoja no existe / no tiene filas útiles.
-function indiceDesdeHistoricos(wb){
-  const nombre = wb.SheetNames.find(n=>{
-    const s=n.toLowerCase().replace(/[^a-z]/g,'');
-    return s.includes('pagoshistoric') || s.includes('pagohistoric') || s.includes('historic');
+// Construye el índice de pagos a partir de TODAS las hojas de pagos del libro.
+// Importante: "Pagos Historicos" y "Bd Pagos" son COMPLEMENTARIAS, no redundantes.
+//   · Pagos Historicos -> archivo (2022 → ene-2026)
+//   · Bd Pagos         -> operación corriente (nov-2024 → hoy)
+// Muchas pólizas tienen sus pagos repartidos entre ambas, así que hay que sumar las dos.
+// Dedup: un mismo pago puede venir en ambas hojas con el recibo renumerado
+// (ej. 006948 en Historicos y 8006948 en Bd Pagos), así que se cruza por
+// póliza + fecha + monto, respetando pagos legítimos repetidos DENTRO de una hoja.
+function indiceDePagos(wb){
+  const norm = n => String(n).toLowerCase().replace(/[^a-z]/g,'');
+  const hojas = wb.SheetNames.filter(n=>{
+    const s=norm(n);
+    return (s.includes('pago') && !s.includes('cliente')); // "Bd Pagos", "Pagos Historicos"
   });
-  if(!nombre) return null;
-  const filas = XLSX.utils.sheet_to_json(wb.Sheets[nombre], {defval:''});
-  if(!filas.length) return null;
-  const idx={}; let total=0;
-  for(const row of filas){
-    const r={}; for(const k in row) r[String(k).trim().toUpperCase()] = row[k];
-    const id = String(r['IDPOLIZA']||'').trim().toUpperCase();
-    if(!id) continue;
-    const monto = parseNum(r['MONTO DE PAGO'] ?? r['MONTO']);
-    if(!(monto>0)) continue;
-    const f = parseFecha(r['FECHA PAGO'] ?? r['FECHA']);
-    if(!idx[id]) idx[id]={suma:0,n:0,ultimo:null};
-    idx[id].suma+=monto; idx[id].n++;
-    if(f && (!idx[id].ultimo || f>idx[id].ultimo)) idx[id].ultimo=f;
-    total++;
+  if(!hojas.length) return null;
+
+  // Bd Pagos primero (es la fuente viva); Historicos después, para dedup contra ella.
+  hojas.sort((a,b)=> (norm(a).includes('historic')?1:0) - (norm(b).includes('historic')?1:0));
+
+  const idx={}; let total=0; const detalle={};
+  const vistos=new Map();   // 'poliza|fechaISO|monto' -> cuántas veces ya se contó
+
+  for(const nombre of hojas){
+    const filas = XLSX.utils.sheet_to_json(wb.Sheets[nombre], {defval:''});
+    let n=0;
+    const esHistorico = norm(nombre).includes('historic');
+
+    for(const row of filas){
+      const r={}; for(const k in row) r[String(k).trim().toUpperCase()] = row[k];
+      const id = String(r['IDPOLIZA']||'').trim().toUpperCase();
+      if(!id) continue;
+      const monto = parseNum(r['MONTO DE PAGO'] ?? r['MONTO']);
+      if(!(monto>0)) continue;                       // ignora ajustes en $0
+      const f = parseFecha(r['FECHA PAGO'] ?? r['FECHA']);
+
+      const clave = id+'|'+(f? f.toISOString().slice(0,10) : 'sf')+'|'+monto;
+      if(esHistorico && vistos.get(clave)>0){        // ya vino en Bd Pagos: mismo pago
+        vistos.set(clave, vistos.get(clave)-1);
+        continue;
+      }
+      if(!esHistorico) vistos.set(clave, (vistos.get(clave)||0)+1);
+
+      if(!idx[id]) idx[id]={suma:0,n:0,ultimo:null};
+      idx[id].suma+=monto; idx[id].n++;
+      if(f && (!idx[id].ultimo || f>idx[id].ultimo)) idx[id].ultimo=f;
+      total++; n++;
+    }
+    detalle[nombre]=n;
   }
-  return {idx, total, nombre};
+  if(!total) return null;
+  return {idx, total, hojas, detalle};
 }
 
 // Respaldo: índice desde las columnas "Monto de Pago 01-20" de Bd Clientes
@@ -697,11 +727,11 @@ function procesarArchivo(file, opts){
         return;
       }
 
-      // --- 3) Fuente de pagos: preferir "Pagos Historicos"; si falta, respaldo 01-20 ---
-      const hist=indiceDesdeHistoricos(wb);
-      let nIdx, nTotal, nFuente;
-      if(hist){
-        nIdx=hist.idx; nTotal=hist.total; nFuente='historicos';
+      // --- 3) Fuente de pagos: hojas de pagos del libro; si no hay, respaldo 01-20 ---
+      const pag=indiceDePagos(wb);
+      let nIdx, nTotal, nFuente, nDetalle=null;
+      if(pag){
+        nIdx=pag.idx; nTotal=pag.total; nFuente='hojas'; nDetalle=pag.detalle;
       }else{
         const resp=indiceDesdeColumnas(filas);
         nIdx=resp.idx; nTotal=resp.total; nFuente='respaldo';
@@ -722,15 +752,24 @@ function procesarArchivo(file, opts){
 
       // --- 5) Commit: aquí sí se reemplaza todo ---
       RAW_ROWS=filas;
-      PAGOS_IDX=nIdx; PAGOS_TOTAL=nTotal; PAGOS_FUENTE=nFuente;
+      PAGOS_IDX=nIdx; PAGOS_TOTAL=nTotal; PAGOS_FUENTE=nFuente; PAGOS_DETALLE=nDetalle;
       ARCHIVO_NOMBRE=file.name; ULTIMA_CARGA=new Date();
 
-      // aviso de respaldo de pagos, arriba del dashboard
+      // avisos arriba del dashboard
       const cont=$('#resultado');
       const viejo=$('#avisoPagos'); if(viejo) viejo.remove();
-      if(PAGOS_FUENTE==='respaldo'){
+
+      // Red de seguridad crítica: si casi ninguna póliza cruzó con un pago, el
+      // reporte de atrasos es basura (todas saldrían "canceladas por falta de pago").
+      const polizasConPago = Object.keys(PAGOS_IDX||{}).length;
+      const cobertura = filas.length ? polizasConPago/filas.length : 0;
+      if(cobertura < 0.2){
+        cont.insertAdjacentHTML('afterbegin', `<div id="avisoPagos" style="background:var(--riesgo-bg);color:var(--riesgo);border:1px solid #e8b4ae;border-radius:10px;padding:12px 16px;margin:16px 0;font-size:.85rem">
+          🛑 <b>El cruce de pagos casi no encontró coincidencias</b> (${polizasConPago.toLocaleString('es-MX')} de ${filas.length.toLocaleString('es-MX')} pólizas tienen pagos ligados). Los atrasos y estatus mostrados <b>no son confiables</b>: revisa que el archivo traiga las hojas de pagos con las columnas <i>IdPoliza</i>, <i>Fecha Pago</i> y <i>Monto de Pago</i>.
+        </div>`);
+      }else if(PAGOS_FUENTE==='respaldo'){
         cont.insertAdjacentHTML('afterbegin', `<div id="avisoPagos" style="background:#fcefd6;color:#8a5a00;border:1px solid #e6c88a;border-radius:10px;padding:12px 16px;margin:16px 0;font-size:.85rem">
-          ⚠️ <b>No se encontró la hoja "Pagos Historicos"</b> en este archivo. Se usaron como respaldo las columnas "Monto de Pago 01-20" de Bd Clientes (${PAGOS_TOTAL.toLocaleString('es-MX')} pagos). Para el cálculo definitivo, anexa la hoja "Pagos Historicos".
+          ⚠️ <b>No se encontraron las hojas de pagos</b> en este archivo. Se usaron como respaldo las columnas "Monto de Pago 01-20" de Bd Clientes (${PAGOS_TOTAL.toLocaleString('es-MX')} pagos). Para el cálculo definitivo, anexa las hojas <i>Bd Pagos</i> y <i>Pagos Historicos</i>.
         </div>`);
       }
 
@@ -762,9 +801,10 @@ function procesarArchivo(file, opts){
 /* Info del archivo cargado, en el header */
 function actualizarDbInfo(){
   if(!RAW_ROWS){ $('#dbInfo').innerHTML=''; return; }
-  const fuenteTxt = PAGOS_FUENTE==='historicos'
-    ? PAGOS_TOTAL.toLocaleString('es-MX')+' pagos (Pagos Historicos)'
-    : PAGOS_TOTAL.toLocaleString('es-MX')+' pagos (respaldo 01-20)';
+  const origen = PAGOS_FUENTE==='hojas'
+    ? (PAGOS_DETALLE ? Object.keys(PAGOS_DETALLE).join(' + ') : 'hojas de pagos')
+    : 'respaldo 01-20';
+  const fuenteTxt = PAGOS_TOTAL.toLocaleString('es-MX')+' pagos ('+origen+')';
   const hora = ULTIMA_CARGA
     ? String(ULTIMA_CARGA.getHours()).padStart(2,'0')+':'+String(ULTIMA_CARGA.getMinutes()).padStart(2,'0')
     : '';
