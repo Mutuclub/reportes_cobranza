@@ -220,6 +220,17 @@
   .user-table td{padding:9px 10px;border-bottom:1px solid #eef1f5;vertical-align:middle}
   .user-table .acc{display:flex;gap:6px;flex-wrap:wrap}
   .user-table .acc button{padding:5px 9px;font-size:.75rem}
+
+  /* ---------- Toast (aviso de recarga) ---------- */
+  #toast{
+    position:fixed;bottom:26px;left:50%;
+    transform:translateX(-50%) translateY(18px);
+    background:var(--tinta);color:#fff;padding:12px 22px;border-radius:10px;
+    font-size:.88rem;font-weight:600;box-shadow:0 6px 24px rgba(15,39,64,.28);
+    opacity:0;pointer-events:none;transition:.25s;z-index:200;max-width:90vw;text-align:center;
+  }
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  #toast.err{background:var(--riesgo)}
 </style>
 </head>
 <body>
@@ -237,6 +248,8 @@
     <div id="sessionBar" class="hidden">
       <span id="sessionUser"></span>
       <button class="header-btn" id="btnRefrescar" title="Actualizar usuarios y gestiones desde el backend">🔄</button>
+      <button class="header-btn" id="btnRecargar" style="display:none" title="Cargar la versión más reciente del Excel (reemplaza los datos actuales)">📄 Actualizar Excel</button>
+      <input type="file" id="fileInputRecarga" accept=".xlsx,.xls" style="display:none">
       <button class="header-btn" id="btnUsuarios" style="display:none">⚙️ Usuarios</button>
       <button class="header-btn" id="btnLogout">Salir</button>
     </div>
@@ -604,6 +617,8 @@ let RAW_ROWS=null;
 let PAGOS_IDX=null;         // índice de pagos por IdPoliza
 let PAGOS_FUENTE='';        // 'historicos' | 'respaldo' | 'ninguna'
 let PAGOS_TOTAL=0;
+let ARCHIVO_NOMBRE='';      // nombre del último archivo cargado
+let ULTIMA_CARGA=null;      // Date de la última carga (para "Cargado 09:14")
 
 // Construye el índice de pagos desde la hoja "Pagos Historicos".
 // Devuelve {idx, total} o null si la hoja no existe / no tiene filas útiles.
@@ -651,48 +666,135 @@ function indiceDesdeColumnas(rows){
   return {idx, total};
 }
 
-function procesarArchivo(file){
+/* Lee el .xlsx y SOLO reemplaza los datos actuales si todo salió bien.
+   opts.recarga = true  -> viene del botón "Actualizar Excel" (Admin), con
+   validación de estructura y confirmación si el archivo trae menos pólizas. */
+function procesarArchivo(file, opts){
+  opts = opts || {};
+  const esRecarga = !!opts.recarga;
+  const btnRec = $('#btnRecargar');
+  if(esRecarga){ btnRec.disabled=true; btnRec.textContent='⏳ Leyendo…'; }
+  const terminar = ()=>{ if(esRecarga){ btnRec.disabled=false; btnRec.textContent='📄 Actualizar Excel'; } };
+
   const reader=new FileReader();
   reader.onload=e=>{
     try{
       const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:true});
       const nombreHoja = wb.SheetNames.find(n=>n.toLowerCase().includes('cliente')) || wb.SheetNames[0];
       const ws=wb.Sheets[nombreHoja];
-      RAW_ROWS=XLSX.utils.sheet_to_json(ws,{defval:''});
-      if(!RAW_ROWS.length){ alert('La hoja "'+nombreHoja+'" no tiene filas.'); return; }
 
-      // Fuente de pagos: preferir "Pagos Historicos"; si falta, respaldo 01-20
-      const hist=indiceDesdeHistoricos(wb);
-      let avisoHTML='';
-      if(hist){
-        PAGOS_IDX=hist.idx; PAGOS_TOTAL=hist.total; PAGOS_FUENTE='historicos';
-      }else{
-        const resp=indiceDesdeColumnas(RAW_ROWS);
-        PAGOS_IDX=resp.idx; PAGOS_TOTAL=resp.total; PAGOS_FUENTE='respaldo';
-        avisoHTML=`<div id="avisoPagos" style="background:#fcefd6;color:#8a5a00;border:1px solid #e6c88a;border-radius:10px;padding:12px 16px;margin:16px 0;font-size:.85rem">
-          ⚠️ <b>No se encontró la hoja "Pagos Historicos"</b> en este archivo. Se usaron como respaldo las columnas "Monto de Pago 01-20" de Bd Clientes (${PAGOS_TOTAL.toLocaleString('es-MX')} pagos). Para el cálculo definitivo, anexa la hoja "Pagos Historicos".
-        </div>`;
+      // --- 1) Parseo en variables locales: los datos actuales NO se tocan todavía ---
+      const filas=XLSX.utils.sheet_to_json(ws,{defval:''});
+      if(!filas.length){
+        alert('La hoja "'+nombreHoja+'" no tiene filas.\n\nNo se reemplazó nada.');
+        return;
       }
 
-      const fuenteTxt = PAGOS_FUENTE==='historicos'
-        ? `${PAGOS_TOTAL.toLocaleString('es-MX')} pagos (Pagos Historicos)`
-        : `${PAGOS_TOTAL.toLocaleString('es-MX')} pagos (respaldo 01-20)`;
-      $('#dbInfo').innerHTML='📄 '+file.name+'<br>'+RAW_ROWS.length.toLocaleString('es-MX')+' pólizas · '+fuenteTxt;
+      // --- 2) Validación de estructura: la columna llave debe existir ---
+      const columnas = Object.keys(filas[0]||{});
+      if(!columnas.includes('IdPoliza')){
+        alert('El archivo no tiene la estructura esperada:\nno se encontró la columna "IdPoliza" en la hoja "'+nombreHoja+'".\n\nNo se reemplazó nada; los datos actuales siguen intactos.');
+        return;
+      }
 
-      // insertar/actualizar aviso arriba del dashboard
+      // --- 3) Fuente de pagos: preferir "Pagos Historicos"; si falta, respaldo 01-20 ---
+      const hist=indiceDesdeHistoricos(wb);
+      let nIdx, nTotal, nFuente;
+      if(hist){
+        nIdx=hist.idx; nTotal=hist.total; nFuente='historicos';
+      }else{
+        const resp=indiceDesdeColumnas(filas);
+        nIdx=resp.idx; nTotal=resp.total; nFuente='respaldo';
+      }
+
+      // --- 4) Red de seguridad: ¿el archivo nuevo trae menos pólizas que el actual? ---
+      const previas = RAW_ROWS ? RAW_ROWS.length : 0;
+      if(esRecarga && previas && filas.length < previas){
+        const ok = confirm(
+          'El archivo nuevo tiene MENOS pólizas que las cargadas ahora:\n\n'+
+          '   • Archivo nuevo:   '+filas.length.toLocaleString('es-MX')+' pólizas\n'+
+          '   • Datos actuales:  '+previas.toLocaleString('es-MX')+' pólizas\n\n'+
+          'Suele pasar cuando se sube un archivo filtrado o equivocado.\n'+
+          '¿Reemplazar de todas formas?'
+        );
+        if(!ok){ toast('Recarga cancelada · los datos actuales siguen intactos'); return; }
+      }
+
+      // --- 5) Commit: aquí sí se reemplaza todo ---
+      RAW_ROWS=filas;
+      PAGOS_IDX=nIdx; PAGOS_TOTAL=nTotal; PAGOS_FUENTE=nFuente;
+      ARCHIVO_NOMBRE=file.name; ULTIMA_CARGA=new Date();
+
+      // aviso de respaldo de pagos, arriba del dashboard
       const cont=$('#resultado');
       const viejo=$('#avisoPagos'); if(viejo) viejo.remove();
-      if(avisoHTML) cont.insertAdjacentHTML('afterbegin', avisoHTML);
+      if(PAGOS_FUENTE==='respaldo'){
+        cont.insertAdjacentHTML('afterbegin', `<div id="avisoPagos" style="background:#fcefd6;color:#8a5a00;border:1px solid #e6c88a;border-radius:10px;padding:12px 16px;margin:16px 0;font-size:.85rem">
+          ⚠️ <b>No se encontró la hoja "Pagos Historicos"</b> en este archivo. Se usaron como respaldo las columnas "Monto de Pago 01-20" de Bd Clientes (${PAGOS_TOTAL.toLocaleString('es-MX')} pagos). Para el cálculo definitivo, anexa la hoja "Pagos Historicos".
+        </div>`);
+      }
 
+      actualizarDbInfo();
+
+      // recalcular() conserva el cobrador seleccionado; los demás filtros, la
+      // pestaña activa y el ordenamiento viven en el DOM / variables globales,
+      // así que la vista se queda exactamente donde estaba.
       recalcular();
       dropzone.classList.add('hidden');
       $('#resultado').classList.remove('hidden');
+      actualizarBotonRecarga();
+
+      if(esRecarga){
+        if($('#consultaFolio').value.trim()) consultarPoliza(); // refresca la póliza consultada
+        toast('✓ Datos actualizados · '+filas.length.toLocaleString('es-MX')+' pólizas'+
+              (previas ? ' (antes '+previas.toLocaleString('es-MX')+')' : ''));
+      }
     }catch(err){
-      alert('No se pudo leer el archivo: '+err.message);
+      alert('No se pudo leer el archivo: '+err.message+'\n\nNo se reemplazó nada.');
+    }finally{
+      terminar();
     }
   };
+  reader.onerror=()=>{ alert('No se pudo leer el archivo.'); terminar(); };
   reader.readAsArrayBuffer(file);
 }
+
+/* Info del archivo cargado, en el header */
+function actualizarDbInfo(){
+  if(!RAW_ROWS){ $('#dbInfo').innerHTML=''; return; }
+  const fuenteTxt = PAGOS_FUENTE==='historicos'
+    ? PAGOS_TOTAL.toLocaleString('es-MX')+' pagos (Pagos Historicos)'
+    : PAGOS_TOTAL.toLocaleString('es-MX')+' pagos (respaldo 01-20)';
+  const hora = ULTIMA_CARGA
+    ? String(ULTIMA_CARGA.getHours()).padStart(2,'0')+':'+String(ULTIMA_CARGA.getMinutes()).padStart(2,'0')
+    : '';
+  $('#dbInfo').innerHTML='📄 '+ARCHIVO_NOMBRE+'<br>'+RAW_ROWS.length.toLocaleString('es-MX')+' pólizas · '+fuenteTxt+
+    (hora?'<br><span style="opacity:.75">🕒 Cargado '+hora+'</span>':'');
+}
+
+/* El botón de recarga solo existe para Admin y solo si ya hay datos cargados */
+function actualizarBotonRecarga(){
+  const s = getSession();
+  const puede = !!(s && s.rol==='admin' && RAW_ROWS);
+  $('#btnRecargar').style.display = puede ? 'flex' : 'none';
+}
+
+/* Aviso flotante */
+function toast(msg, esError){
+  let t=$('#toast');
+  if(!t){ t=document.createElement('div'); t.id='toast'; document.body.appendChild(t); }
+  t.textContent=msg;
+  t.className = esError ? 'err show' : 'show';
+  clearTimeout(t._tid);
+  t._tid=setTimeout(()=>{ t.className=''; }, 4000);
+}
+
+/* Recarga a petición (Admin) */
+const fileInputRecarga=$('#fileInputRecarga');
+$('#btnRecargar').addEventListener('click', ()=>{ fileInputRecarga.value=''; fileInputRecarga.click(); });
+fileInputRecarga.addEventListener('change', e=>{
+  if(e.target.files.length) procesarArchivo(e.target.files[0], {recarga:true});
+});
 
 function getHoy(){
   const v=$('#fechaRef').value;
@@ -1207,6 +1309,7 @@ function aplicarSesion(){
   $('#sessionBar').classList.remove('hidden');
   $('#sessionUser').textContent = `👤 ${s.usuario} (${s.rol==='admin'?'Admin':'Usuario'})`;
   $('#btnUsuarios').style.display = s.rol==='admin' ? 'flex' : 'none';
+  actualizarBotonRecarga();
 }
 
 async function loginHandler(){
