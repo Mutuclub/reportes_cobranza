@@ -164,6 +164,26 @@
   .ficha-grid .fc .fl{font-size:.72rem;color:var(--suave);text-transform:uppercase;letter-spacing:.3px;font-weight:600;margin-bottom:2px}
   .ficha-grid .fc .fv{font-size:.95rem;font-weight:600;font-variant-numeric:tabular-nums}
   .ficha-noenc{margin-top:14px;padding:16px;text-align:center;color:var(--suave);background:#f8fafc;border-radius:10px}
+  /* Pagos del cliente */
+  .pagos-box{margin-top:16px;border-top:1px solid var(--linea);padding-top:14px}
+  .pagos-head{font-size:.85rem;font-weight:700;color:var(--ok);margin-bottom:12px;display:flex;align-items:center;gap:7px}
+  .pagos-resumen{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:14px}
+  .pagos-resumen .pr{background:#f8fafc;border:1px solid var(--linea);border-radius:10px;padding:11px 14px}
+  .pagos-resumen .pr .prl{font-size:.7rem;color:var(--suave);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:3px}
+  .pagos-resumen .pr .prv{font-size:1.25rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.3px}
+  .pagos-resumen .pr.saldo0 .prv{color:var(--ok)}
+  .pagos-resumen .pr.saldopend .prv{color:var(--riesgo)}
+  .pagos-tabla{border:1px solid var(--linea);border-radius:10px;overflow:hidden}
+  .pagos-tabla table{width:100%;border-collapse:collapse;font-size:.84rem}
+  .pagos-tabla thead th{background:#eef2f7;color:var(--tinta);text-align:left;padding:9px 12px;font-size:.72rem;text-transform:uppercase;letter-spacing:.3px;font-weight:700;white-space:nowrap}
+  .pagos-tabla tbody td{padding:8px 12px;border-top:1px solid #eef1f5;white-space:nowrap}
+  .pagos-tabla tbody tr:hover{background:#f8fafc}
+  .pagos-tabla .pt-monto{text-align:right;font-variant-numeric:tabular-nums;font-weight:600;color:var(--ok)}
+  .pagos-tabla .pt-inicial td{background:var(--inicial-bg)}
+  .pagos-tabla .pt-inicial .pt-recibo{color:var(--inicial);font-weight:700}
+  .pagos-tabla .pt-inicial .pt-monto{color:var(--inicial)}
+  .pagos-tabla .pt-notas{white-space:normal;color:var(--suave);font-size:.8rem;max-width:220px}
+  .pagos-vacio{color:var(--suave);font-size:.82rem;padding:10px 0}
   /* Gestiones de cobro */
   .gestion-box{margin-top:16px;border-top:1px solid var(--linea);padding-top:14px}
   .gestion-head{font-size:.85rem;font-weight:700;color:var(--tinta);margin-bottom:10px}
@@ -496,6 +516,11 @@ const fmtCampoTexto = v => {
   return String(v).trim();
 };
 
+// busca el primer valor no vacío entre varias claves candidatas (fila ya normalizada a MAYÚSCULAS)
+function campoPago(row, claves){
+  for(const k of claves){ if(row[k]!==undefined && row[k]!=='' && row[k]!=null) return String(row[k]).trim(); }
+  return '';
+}
 function parseNum(v){
   if(v==null||v==='') return 0;
   if(typeof v==='number') return isNaN(v)?0:v;
@@ -549,7 +574,7 @@ function calcularRegistro(row, hoy){
   // pagos: se toman del índice de "Pagos Historicos" ligado por IdPoliza.
   // Si no se cargó esa hoja, PAGOS_IDX contiene el respaldo de columnas 01-20.
   const polizaKey = String(g('IdPoliza')||'').trim().toUpperCase();
-  const infoPagos = (PAGOS_IDX && PAGOS_IDX[polizaKey]) || {suma:0, n:0, ultimo:null};
+  const infoPagos = (PAGOS_IDX && PAGOS_IDX[polizaKey]) || {suma:0, n:0, ultimo:null, pagos:[]};
   let pagadoMens = infoPagos.suma, nPagos = infoPagos.n, ultimoPago = infoPagos.ultimo;
 
   const engancheCubierto = inicial>0;
@@ -592,6 +617,7 @@ function calcularRegistro(row, hoy){
     costo, inicial, mensual, engancheCubierto,
     pagadoTotal, saldoTotal, saldoVencido,
     mesesAtraso: mesesAtrasoEnt, nPagos, ultimoPago,
+    pagos: (infoPagos.pagos||[]).slice(),
     inicio, termino, proximoPago, estatus, vigenciaActiva,
     envioTarjeta, retornoTarjeta
   };
@@ -657,6 +683,8 @@ function indiceDePagos(wb){
       const monto = parseNum(r['MONTO DE PAGO'] ?? r['MONTO']);
       if(!(monto>0)) continue;                       // ignora ajustes en $0
       const f = parseFecha(r['FECHA PAGO'] ?? r['FECHA']);
+      const recibo = campoPago(r, ['RECIBO','NO RECIBO','NO. RECIBO','NUMERO DE RECIBO','NÚMERO DE RECIBO','FOLIO','FOLIO RECIBO']);
+      const notas  = campoPago(r, ['NOTAS','NOTA','OBSERVACIONES','OBSERVACION','OBSERVACIÓN','COMENTARIOS','COMENTARIO']);
 
       const clave = id+'|'+(f? f.toISOString().slice(0,10) : 'sf')+'|'+monto;
       if(esHistorico && vistos.get(clave)>0){        // ya vino en Bd Pagos: mismo pago
@@ -665,8 +693,9 @@ function indiceDePagos(wb){
       }
       if(!esHistorico) vistos.set(clave, (vistos.get(clave)||0)+1);
 
-      if(!idx[id]) idx[id]={suma:0,n:0,ultimo:null};
+      if(!idx[id]) idx[id]={suma:0,n:0,ultimo:null,pagos:[]};
       idx[id].suma+=monto; idx[id].n++;
+      idx[id].pagos.push({recibo, fecha:f, monto, notas});
       if(f && (!idx[id].ultimo || f>idx[id].ultimo)) idx[id].ultimo=f;
       total++; n++;
     }
@@ -686,8 +715,10 @@ function indiceDesdeColumnas(rows){
       const monto=parseNum(row['Monto de Pago '+String(i).padStart(2,'0')]);
       if(monto>0){
         const f=parseFecha(row['Fecha Pago '+String(i).padStart(2,'0')]);
-        if(!idx[id]) idx[id]={suma:0,n:0,ultimo:null};
+        const recibo=String(row['Recibo '+String(i).padStart(2,'0')] ?? row['Folio '+String(i).padStart(2,'0')] ?? '').trim();
+        if(!idx[id]) idx[id]={suma:0,n:0,ultimo:null,pagos:[]};
         idx[id].suma+=monto; idx[id].n++;
+        idx[id].pagos.push({recibo, fecha:f, monto, notas:''});
         if(f && (!idx[id].ultimo || f>idx[id].ultimo)) idx[id].ultimo=f;
         total++;
       }
@@ -1216,6 +1247,57 @@ function claseEstatus(e){
   if(e==='PROBLEMA'||e==='CANCELADA POR FALTA DE PAGO') return 'riesgo';
   return 'inicial'; // cancelada manualmente
 }
+// Panel "Pagos del Cliente": resumen + tabla (# · Recibo · Fecha · Monto · Notas),
+// con el enganche (Pago Inicial) como primera fila, al estilo de Consulta de Pólizas.
+function pagosBoxHTML(r){
+  const pagos = (r.pagos||[]).slice().sort((a,b)=>{
+    const ta=a.fecha?a.fecha.getTime():Infinity, tb=b.fecha?b.fecha.getTime():Infinity;
+    return ta-tb;
+  });
+  const conEnganche = r.engancheCubierto && r.inicial>0;
+  const nRegistros = (conEnganche?1:0) + pagos.length;
+  const saldoCero = r.saldoTotal<=0.5;
+
+  const filas=[];
+  let idx=1;
+  if(conEnganche){
+    filas.push(`<tr class="pt-inicial">
+      <td>${idx++}</td>
+      <td class="pt-recibo">INICIAL</td>
+      <td>${fmtFecha(r.inicio)}</td>
+      <td class="pt-monto">${fmtMoney(r.inicial)}</td>
+      <td class="pt-notas">Enganche / pago inicial</td>
+    </tr>`);
+  }
+  for(const p of pagos){
+    filas.push(`<tr>
+      <td>${idx++}</td>
+      <td class="pt-recibo">${p.recibo||'—'}</td>
+      <td>${fmtFecha(p.fecha)}</td>
+      <td class="pt-monto">${fmtMoney(p.monto)}</td>
+      <td class="pt-notas">${p.notas?p.notas.replace(/</g,'&lt;'):'—'}</td>
+    </tr>`);
+  }
+
+  const tabla = nRegistros
+    ? `<div class="pagos-tabla"><table>
+        <thead><tr><th>#</th><th>Recibo</th><th>Fecha</th><th style="text-align:right">Monto</th><th>Notas</th></tr></thead>
+        <tbody>${filas.join('')}</tbody>
+      </table></div>`
+    : `<div class="pagos-vacio">Sin pagos registrados para esta póliza.</div>`;
+
+  return `
+    <div class="pagos-box">
+      <div class="pagos-head">💵 Pagos del Cliente</div>
+      <div class="pagos-resumen">
+        <div class="pr"><div class="prl">Pagos registrados</div><div class="prv">${nRegistros}</div></div>
+        <div class="pr"><div class="prl">Total pagado</div><div class="prv">${fmtMoney(r.pagadoTotal)}</div></div>
+        <div class="pr ${saldoCero?'saldo0':'saldopend'}"><div class="prl">Saldo</div><div class="prv">${fmtMoney(r.saldoTotal)}</div></div>
+      </div>
+      ${tabla}
+    </div>`;
+}
+
 function consultarPoliza(){
   const q=$('#consultaFolio').value.trim().toUpperCase();
   const cont=$('#consultaResultado');
@@ -1256,6 +1338,7 @@ function consultarPoliza(){
         <div class="fc"><div class="fl">Teléfono</div><div class="fv">${r.telefono||'—'}</div></div>
         <div class="fc"><div class="fl">Placas</div><div class="fv">${r.placas||'—'}</div></div>
       </div>
+      ${pagosBoxHTML(r)}
       ${gestionBoxHTML(r)}
     </div>`;
 }
