@@ -267,7 +267,7 @@
     <div id="dbInfo" style="font-size:.78rem;opacity:.85;text-align:right"></div>
     <div id="sessionBar" class="hidden">
       <span id="sessionUser"></span>
-      <button class="header-btn" id="btnRefrescar" title="Actualizar usuarios y gestiones desde el backend">🔄</button>
+      <button class="header-btn" id="btnRefrescar" title="Actualizar datos, usuarios y gestiones desde GitHub y el backend">🔄</button>
       <button class="header-btn" id="btnRecargar" style="display:none" title="Cargar la versión más reciente del Excel (reemplaza los datos actuales)">📄 Actualizar Excel</button>
       <input type="file" id="fileInputRecarga" accept=".xlsx,.xls" style="display:none">
       <button class="header-btn" id="btnUsuarios" style="display:none">⚙️ Usuarios</button>
@@ -446,6 +446,15 @@ let sortState = { col:null, dir:1 };
    ⚠️ Pega aquí la URL de tu Web App de Apps Script (termina en /exec):
    ============================================================ */
 const API_URL = 'https://script.google.com/macros/s/AKfycby-5pgkefogX15d4XDPfxWHRpkJlBCGP3m_L0NkGdcc9utBGDlDFlGhGr9C5_QH-iXK/exec';
+
+/* ── Fuente central de datos ───────────────────────────────────────
+   El .xlsx vive en el MISMO repo/sitio que esta app (GitHub Pages),
+   así que se lee como mismo origen: sin CORS, sin depender del branch,
+   y funciona aunque el repo sea privado. El Admin actualiza los datos
+   subiendo el archivo al repo; la carga local en la app es solo
+   respaldo (Admin) para cuando no se pueda acceder a GitHub. */
+const DATA_FILE = 'MUTUAL_2026.xlsx';        // nombre exacto del workbook en el repo
+const DATA_URL  = './' + DATA_FILE;          // relativo al sitio => mismo origen
 
 let USUARIOS_CACHE = [];
 let GESTIONES_CACHE = [];
@@ -733,6 +742,12 @@ function indiceDesdeColumnas(rows){
 function procesarArchivo(file, opts){
   opts = opts || {};
   const esRecarga = !!opts.recarga;
+  const esRemoto  = !!opts.remoto;
+  const conAvisos = esRecarga || esRemoto;   // dispara red de seguridad + toast de éxito
+  if(!esRemoto){                              // la carga LOCAL es exclusiva de Admin
+    const _s = getSession();
+    if(!(_s && _s.rol==='admin')){ toast('Solo un administrador puede cargar el archivo.', true); return; }
+  }
   const btnRec = $('#btnRecargar');
   if(esRecarga){ btnRec.disabled=true; btnRec.textContent='⏳ Leyendo…'; }
   const terminar = ()=>{ if(esRecarga){ btnRec.disabled=false; btnRec.textContent='📄 Actualizar Excel'; } };
@@ -770,7 +785,7 @@ function procesarArchivo(file, opts){
 
       // --- 4) Red de seguridad: ¿el archivo nuevo trae menos pólizas que el actual? ---
       const previas = RAW_ROWS ? RAW_ROWS.length : 0;
-      if(esRecarga && previas && filas.length < previas){
+      if(conAvisos && previas && filas.length < previas){
         const ok = confirm(
           'El archivo nuevo tiene MENOS pólizas que las cargadas ahora:\n\n'+
           '   • Archivo nuevo:   '+filas.length.toLocaleString('es-MX')+' pólizas\n'+
@@ -814,19 +829,85 @@ function procesarArchivo(file, opts){
       $('#resultado').classList.remove('hidden');
       actualizarBotonRecarga();
 
-      if(esRecarga){
+      if(conAvisos){
         if($('#consultaFolio').value.trim()) consultarPoliza(); // refresca la póliza consultada
-        toast('✓ Datos actualizados · '+filas.length.toLocaleString('es-MX')+' pólizas'+
+        toast('✓ Datos actualizados'+(esRemoto?' desde GitHub':'')+' · '+filas.length.toLocaleString('es-MX')+' pólizas'+
               (previas ? ' (antes '+previas.toLocaleString('es-MX')+')' : ''));
       }
+      if(esRemoto) ocultarCargaRemota();
     }catch(err){
-      alert('No se pudo leer el archivo: '+err.message+'\n\nNo se reemplazó nada.');
+      if(esRemoto){ mostrarErrorRemota(err); }
+      else{ alert('No se pudo leer el archivo: '+err.message+'\n\nNo se reemplazó nada.'); }
     }finally{
       terminar();
     }
   };
   reader.onerror=()=>{ alert('No se pudo leer el archivo.'); terminar(); };
   reader.readAsArrayBuffer(file);
+}
+
+/* ── Carga central desde GitHub Pages (mismo origen) ────────────────
+   Descarga el .xlsx publicado junto a la app y lo procesa con el MISMO
+   pipeline que la carga manual, para que todas las sesiones vean lo mismo.
+   Se llama al iniciar sesión y desde el botón 🔄 (forzar=true). */
+let CARGA_REMOTA_EN_CURSO = false;
+async function cargarDatosRemotos(opts){
+  opts = opts || {};
+  if(CARGA_REMOTA_EN_CURSO) return;
+  if(RAW_ROWS && !opts.forzar) return;          // ya hay datos en esta sesión
+  CARGA_REMOTA_EN_CURSO = true;
+  mostrarCargaRemota();
+  try{
+    const url = DATA_URL + (DATA_URL.includes('?')?'&':'?') + 't=' + Date.now();
+    const resp = await fetch(url, {cache:'no-store'});
+    if(!resp.ok) throw new Error('HTTP '+resp.status+' al pedir '+DATA_FILE);
+    const blob = await resp.blob();
+    const file = new File([blob], DATA_FILE, {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    procesarArchivo(file, {remoto:true});        // procesarArchivo actualiza/oculta la UI al terminar
+  }catch(err){
+    mostrarErrorRemota(err);
+  }finally{
+    CARGA_REMOTA_EN_CURSO = false;
+  }
+}
+
+/* Overlay de "cargando" mientras baja el archivo (solo en la carga inicial;
+   en un refresco en caliente no tapamos la vista, el botón 🔄 ya muestra ⏳). */
+function mostrarCargaRemota(){
+  if(RAW_ROWS) return;
+  let o=$('#cargaRemota');
+  if(!o){
+    o=document.createElement('div');
+    o.id='cargaRemota';
+    o.style.cssText='padding:44px 20px;text-align:center;color:var(--suave)';
+    const gate=$('#appGate'); if(gate) gate.appendChild(o);
+  }
+  o.innerHTML='<div style="font-size:2.4rem;margin-bottom:8px">⏳</div>'+
+    '<h2 style="font-size:1.05rem;font-weight:600;margin-bottom:4px;color:var(--tinta)">Cargando datos desde GitHub…</h2>'+
+    '<p style="font-size:.88rem">Descargando <b>'+DATA_FILE+'</b> y calculando la cobranza.</p>';
+  o.style.display='block';
+}
+function ocultarCargaRemota(){ const o=$('#cargaRemota'); if(o) o.style.display='none'; }
+
+/* Falla al bajar el archivo central. Admin -> respaldo de carga local;
+   usuario normal -> aviso para contactar a un administrador. */
+function mostrarErrorRemota(err){
+  ocultarCargaRemota();
+  const s=getSession();
+  const esAdmin=!!(s && s.rol==='admin');
+  const msg=(err&&err.message)||err;
+  toast('No se pudieron cargar los datos desde GitHub: '+msg, true);
+  if(esAdmin){
+    const dz=$('#dropzone'); if(dz) dz.classList.remove('hidden');   // respaldo: carga local
+  }else{
+    let o=$('#cargaRemota');
+    if(o){
+      o.style.display='block';
+      o.innerHTML='<div style="font-size:2.4rem;margin-bottom:8px">🚫</div>'+
+        '<h2 style="font-size:1.05rem;font-weight:600;margin-bottom:4px;color:var(--tinta)">No se pudieron cargar los datos</h2>'+
+        '<p style="font-size:.88rem">No se pudo leer el archivo central desde GitHub. Pídele a un administrador que verifique <b>'+DATA_FILE+'</b> en el repositorio.</p>';
+    }
+  }
 }
 
 /* Info del archivo cargado, en el header */
@@ -1433,6 +1514,8 @@ function aplicarSesion(){
   $('#sessionUser').textContent = `👤 ${s.usuario} (${s.rol==='admin'?'Admin':'Usuario'})`;
   $('#btnUsuarios').style.display = s.rol==='admin' ? 'flex' : 'none';
   actualizarBotonRecarga();
+  $('#dropzone').classList.add('hidden');   // los datos vienen de GitHub; el dropzone es respaldo (Admin) ante fallo
+  cargarDatosRemotos();                      // todos jalan la misma fuente al entrar
 }
 
 async function loginHandler(){
@@ -1472,7 +1555,7 @@ $('#btnLogout').addEventListener('click', ()=>{
 });
 $('#btnRefrescar').addEventListener('click', async ()=>{
   const b=$('#btnRefrescar'); b.textContent='⏳';
-  await Promise.all([fetchUsuariosRemote(), fetchGestionesRemote()]);
+  await Promise.all([fetchUsuariosRemote(), fetchGestionesRemote(), cargarDatosRemotos({forzar:true})]);
   b.textContent='🔄';
   if(repActual==='gestiones') render();
   if($('#consultaFolio').value.trim()) consultarPoliza();
