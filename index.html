@@ -173,6 +173,10 @@
   .pagos-resumen .pr .prv{font-size:1.25rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.3px}
   .pagos-resumen .pr.saldo0 .prv{color:var(--ok)}
   .pagos-resumen .pr.saldopend .prv{color:var(--riesgo)}
+  .pagos-resumen .pr.saldofavor{background:#e6f6f8;border-color:#9fd6de}
+  .pagos-resumen .pr.saldofavor .prl{color:#0b6c78}
+  .pagos-resumen .pr.saldofavor .prv{color:#0b6c78}
+  .pill.favor{background:#e6f6f8;color:#0b6c78}
   .pagos-tabla{border:1px solid var(--linea);border-radius:10px;overflow:hidden}
   .pagos-tabla table{width:100%;border-collapse:collapse;font-size:.84rem}
   .pagos-tabla thead th{background:#eef2f7;color:var(--tinta);text-align:left;padding:9px 12px;font-size:.72rem;text-transform:uppercase;letter-spacing:.3px;font-weight:700;white-space:nowrap}
@@ -588,7 +592,10 @@ function calcularRegistro(row, hoy){
 
   const engancheCubierto = inicial>0;
   const pagadoTotal = (engancheCubierto?inicial:0) + pagadoMens;
-  const saldoTotal  = Math.max(0, costo - pagadoTotal);
+  // saldo neto con signo: >0 = lo que debe · <0 = pagó de más (saldo a favor)
+  const saldoNeto   = costo - pagadoTotal;
+  const saldoTotal  = Math.max(0, saldoNeto);   // lo que aún se debe (estatus, tablas, saldo vencido)
+  const saldoFavor  = Math.max(0, -saldoNeto);  // sobrepago del cliente (saldo a favor)
 
   // meses de atraso = tiempo calendario de mora (NO se topa al tamaño del plan).
   // mensualidades que DEBIERON pagarse a la fecha: una por mes desde el inicio de vigencia
@@ -624,7 +631,7 @@ function calcularRegistro(row, hoy){
     placas: String(g('Placas')||'').trim(),
     vehiculo: String(g('Vehículo')||'').trim(),
     costo, inicial, mensual, engancheCubierto,
-    pagadoTotal, saldoTotal, saldoVencido,
+    pagadoTotal, saldoTotal, saldoNeto, saldoFavor, saldoVencido,
     mesesAtraso: mesesAtrasoEnt, nPagos, ultimoPago,
     pagos: (infoPagos.pagos||[]).slice(),
     inicio, termino, proximoPago, estatus, vigenciaActiva,
@@ -1338,6 +1345,7 @@ function pagosBoxHTML(r){
   const conEnganche = r.engancheCubierto && r.inicial>0;
   const nRegistros = (conEnganche?1:0) + pagos.length;
   const saldoCero = r.saldoTotal<=0.5;
+  const tieneFavor = r.saldoFavor>0.5;
 
   const filas=[];
   let idx=1;
@@ -1373,7 +1381,9 @@ function pagosBoxHTML(r){
       <div class="pagos-resumen">
         <div class="pr"><div class="prl">Pagos registrados</div><div class="prv">${nRegistros}</div></div>
         <div class="pr"><div class="prl">Total pagado</div><div class="prv">${fmtMoney(r.pagadoTotal)}</div></div>
-        <div class="pr ${saldoCero?'saldo0':'saldopend'}"><div class="prl">Saldo</div><div class="prv">${fmtMoney(r.saldoTotal)}</div></div>
+        ${tieneFavor
+          ? `<div class="pr saldofavor"><div class="prl">Saldo a favor</div><div class="prv">+${fmtMoney(r.saldoFavor)}</div></div>`
+          : `<div class="pr ${saldoCero?'saldo0':'saldopend'}"><div class="prl">Saldo</div><div class="prv">${fmtMoney(r.saldoTotal)}</div></div>`}
       </div>
       ${tabla}
     </div>`;
@@ -1401,13 +1411,14 @@ function consultarPoliza(){
         </div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           <span class="pill ${claseEstatus(r.estatus)}" style="font-size:.8rem">${r.estatus}</span>
+          ${r.saldoFavor>0.5?`<span class="pill favor" style="font-size:.8rem">saldo a favor +${fmtMoney(r.saldoFavor)}</span>`:''}
           ${vig}
         </div>
       </div>
       <div class="ficha-grid">
         <div class="fc"><div class="fl">Meses de atraso</div><div class="fv">${r.mesesAtraso}</div></div>
         <div class="fc"><div class="fl">Saldo vencido</div><div class="fv">${fmtMoney(r.saldoVencido)}</div></div>
-        <div class="fc"><div class="fl">Saldo total</div><div class="fv">${fmtMoney(r.saldoTotal)}</div></div>
+        <div class="fc"><div class="fl">${r.saldoFavor>0.5?'Saldo a favor':'Saldo total'}</div><div class="fv"${r.saldoFavor>0.5?' style="color:#0b6c78"':''}>${r.saldoFavor>0.5?'+'+fmtMoney(r.saldoFavor):fmtMoney(r.saldoTotal)}</div></div>
         <div class="fc"><div class="fl">Costo</div><div class="fv">${fmtMoney(r.costo)}</div></div>
         <div class="fc"><div class="fl">Pago inicial</div><div class="fv">${fmtMoney(r.inicial)} ${r.engancheCubierto?'✓':'✗'}</div></div>
         <div class="fc"><div class="fl">Mensualidad</div><div class="fv">${fmtMoney(r.mensual)}</div></div>
