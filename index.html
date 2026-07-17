@@ -630,6 +630,13 @@ function calcularRegistro(row, hoy){
     cobrador: String(g('Cobrador')||'').trim() || '(sin cobrador)',
     placas: String(g('Placas')||'').trim(),
     vehiculo: String(g('Vehículo')||'').trim(),
+    asesor: String(g('Asesor')||'').trim(),
+    cobertura: String(g('Tipo Cobertura')||'').trim(),
+    tipoPoliza: String(g('Tipo de Póliza')||'').trim(),
+    modeloAnio: String(g('Modelo')||'').trim(),
+    tipoVeh: String(g('Tipo')||'').trim(),
+    color: String(g('Color')||'').trim(),
+    serie: String(g('Número de Serie')||'').trim(),
     costo, inicial, mensual, engancheCubierto,
     pagadoTotal, saldoTotal, saldoNeto, saldoFavor, saldoVencido,
     mesesAtraso: mesesAtrasoEnt, nPagos, ultimoPago,
@@ -1259,6 +1266,8 @@ function gestionBoxHTML(r){
 
 // alta y borrado de gestiones (delegado sobre el contenedor de la ficha, siempre presente)
 $('#consultaResultado').addEventListener('click', async e=>{
+  const ec=e.target.closest('[data-estado-cuenta]');
+  if(ec){ generarEstadoCuentaReporte(ec.dataset.estadoCuenta); return; }
   const guardar=e.target.closest('#btnGuardarGestion');
   if(guardar){
     const s=getSession();
@@ -1429,6 +1438,10 @@ function consultarPoliza(){
         <div class="fc"><div class="fl">Próximo pago</div><div class="fv">${fmtFecha(r.proximoPago)}</div></div>
         <div class="fc"><div class="fl">Teléfono</div><div class="fv">${r.telefono||'—'}</div></div>
         <div class="fc"><div class="fl">Placas</div><div class="fv">${r.placas||'—'}</div></div>
+        <div class="fc"><div class="fl">Asesor</div><div class="fv">${r.asesor||'—'}</div></div>
+      </div>
+      <div class="ficha-acciones" style="margin:12px 0 4px">
+        <button class="btn" data-estado-cuenta="${r.poliza}">📄 Generar Estado de Cuenta (PDF)</button>
       </div>
       ${pagosBoxHTML(r)}
       ${gestionBoxHTML(r)}
@@ -1671,6 +1684,241 @@ $('#tbodyUsuarios').addEventListener('click', async e=>{
   const s=getSession();
   if(s) await fetchGestionesRemote();
 })();
+
+/* ============ ESTADO DE CUENTA (PDF) — portado de Consulta de Pólizas ============
+   Reutiliza el registro ya calculado en Reportes de Cobranza (mismo COSTO,
+   PAGO INICIAL, PAGO MENSUAL, PAGOS y ESTATUS que ve el usuario). Un adaptador
+   traduce el registro `r` a la forma que espera el generador. Depende de
+   parseNum(), toast() ya existentes. Carga jsPDF/autotable bajo demanda.
+   ================================================================================ */
+const EC_CFG = {
+  nombre: 'Arts Nova',
+  dir:    'Emilio Rabaza No. 1820, Colonia Huerta Baeza, Guadalajara, Jalisco',
+  tel:    '3322643781',
+  wa:     '3334917330',
+  logo:   ''
+};
+const EC_COLORES = {
+  'PAGADA':'#0E7C66','VIGENTE':'#2563EB','ATRASADA':'#D97706','PROBLEMA':'#EA580C',
+  'CANCELADA POR FALTA DE PAGO':'#DC2626','CANCELADA MANUAL':'#6B7280',
+  'CANCELADA MANUALMENTE':'#6B7280','AL CORRIENTE':'#2563EB'
+};
+function ecColor(est){ return EC_COLORES[(est||'').trim().toUpperCase()] || '#6B7280'; }
+function ecHex(h){ h=h.replace('#',''); return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; }
+function ecParseFecha(s){
+  if(!s) return null;
+  if(s instanceof Date) return isNaN(s)?null:s;
+  const m=String(s).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if(!m) return null;
+  const d=new Date(+m[3], +m[2]-1, +m[1]); return isNaN(d)?null:d;
+}
+function ecFechaValida(d){ return d instanceof Date && !isNaN(d) && d.getFullYear()>=2015 && d.getFullYear()<=2030; }
+function ecFmtFecha(d){ if(!ecFechaValida(d)) return '—'; const dd=String(d.getDate()).padStart(2,'0'),mm=String(d.getMonth()+1).padStart(2,'0'); return dd+'/'+mm+'/'+d.getFullYear(); }
+function ecMoneda(n){ n=(typeof n==='number')?n:parseNum(n); if(n===null||isNaN(n)) n=0; return '$'+(Math.round(n*100)/100).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function ecAddMonths(date,n){ const d=new Date(date.getTime()); const day=d.getDate(); d.setMonth(d.getMonth()+n); if(d.getDate()<day) d.setDate(0); return d; }
+
+function ecCalcular(p){
+  const costo   = parseNum(p.COSTO) || 0;
+  const inicial = parseNum(p['PAGO INICIAL']) || 0;
+  const mensual = parseNum(p['PAGO MENSUAL']) || 0;
+  const ini = ecParseFecha(p['INICIO VIGENCIA']);
+  const fin = ecParseFecha(p['TERMINO VIGENCIA']);
+  const pagos = Array.isArray(p.PAGOS) ? p.PAGOS : [];
+  const sumaPagos   = pagos.reduce((s,x)=> s + (parseNum(x.monto)||0), 0);
+  const totalPagado = inicial + sumaPagos;
+  const saldo       = costo - totalPagado;
+  const estatus     = (p.ESTATUS||'').trim() || (saldo<=0 ? 'PAGADA' : '');
+
+  const calendario = [];
+  const montoMens  = Math.max(0, costo - inicial);
+  const nCont = mensual>0 ? Math.max(0, Math.ceil(montoMens/mensual)) : 0;
+  let rest = sumaPagos; const hoy = new Date();
+  for(let i=1;i<=nCont;i++){
+    const venc = ecFechaValida(ini) ? ecAddMonths(ini,i) : null;
+    let monto = mensual; if(i===nCont) monto = montoMens - mensual*(nCont-1);
+    monto = Math.round(monto*100)/100;
+    let estado;
+    if(rest >= monto-0.005){ estado='Pagada'; rest-=monto; }
+    else if(rest>0){ estado='Parcial'; rest=0; }
+    else { estado=(venc && venc<hoy)?'Vencida':'Pendiente'; }
+    if(saldo<=0) estado='Pagada';
+    calendario.push({n:i, vencimiento:venc, monto, estado});
+  }
+  let proximo=null;
+  if(saldo>0){ const pend=calendario.find(c=>c.estado!=='Pagada'); proximo=pend?pend.vencimiento:null; }
+
+  const tabla=[];
+  if(inicial>0) tabla.push({recibo:'INICIAL', fecha:ini, monto:inicial, tipo:'Pago Inicial'});
+  const ord = pagos.slice()
+    .filter(x=>{ const m=parseNum(x.monto); return m!==null && Math.abs(m)>0.0001; })
+    .sort((a,b)=> (a._f||0)-(b._f||0));
+  ord.forEach(x=> tabla.push({recibo:x.recibo, fecha:ecParseFecha(x.fecha), monto:parseNum(x.monto)||0, tipo:'Abono'}));
+
+  return {costo, inicial, mensual, totalPagado, saldo, estatus, nMensualidades:nCont, calendario, proximo, tabla, ini, fin};
+}
+
+function ecEncabezado(doc){
+  const W=doc.internal.pageSize.getWidth();
+  doc.setFillColor(22,35,61); doc.rect(0,0,W,3,'F');
+  doc.setFont('times','bold'); doc.setFontSize(20); doc.setTextColor(22,35,61);
+  doc.text(EC_CFG.nombre,14,18);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(107,118,137);
+  doc.text(EC_CFG.dir,14,24);
+  doc.text('Tel. '+EC_CFG.tel+'    ·    WhatsApp '+EC_CFG.wa,14,28.5);
+  doc.setDrawColor(220,225,234); doc.setLineWidth(.4); doc.line(14,33,W-14,33);
+  return 40;
+}
+function ecPill(doc,x,y,txt,color){
+  const [r,g,b]=ecHex(color); doc.setFillColor(r,g,b);
+  doc.setFont('helvetica','bold'); doc.setFontSize(8.5);
+  const w=doc.getTextWidth(txt)+8; doc.roundedRect(x,y-4.6,w,6.4,3,3,'F');
+  doc.setTextColor(255,255,255); doc.text(txt,x+4,y); return w;
+}
+function ecBloque(doc,x,y,titulo,pares,ancho){
+  doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(107,118,137);
+  doc.text(titulo.toUpperCase(),x,y); y+=5; doc.setFontSize(9);
+  pares.forEach(([k,v])=>{
+    doc.setFont('helvetica','normal'); doc.setTextColor(107,118,137); doc.text(k,x,y);
+    doc.setFont('helvetica','bold'); doc.setTextColor(22,35,61);
+    const tx=doc.splitTextToSize(String(v==null||v===''?'—':v),ancho-26); doc.text(tx,x+26,y);
+    y+=Math.max(4.6,tx.length*4.2);
+  });
+  return y;
+}
+
+function ecPDF(p){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'mm',format:'a4'});
+  const r = ecCalcular(p);
+  let y = ecEncabezado(doc);
+  const W = doc.internal.pageSize.getWidth();
+
+  doc.setFont('times','bold'); doc.setFontSize(13); doc.setTextColor(22,35,61);
+  doc.text('ESTADO DE CUENTA',14,y);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(107,118,137);
+  doc.text('Emitido: '+ecFmtFecha(new Date()),W-14,y-4,{align:'right'});
+  doc.text('Póliza N.º '+(p.POLIZA||'—'),W-14,y,{align:'right'});
+  ecPill(doc,14,y+7,(r.estatus||'—').toUpperCase(),ecColor(r.estatus)); y+=16;
+
+  const colW=(W-28)/2;
+  const y1=ecBloque(doc,14,y,'Datos del cliente',[
+    ['Nombre',p.NOMBRE],['Teléfono',p.TELEFONO],['Cobertura',p.COBERTURA],
+    ['Tipo póliza',p['TIPO DE POLIZA']],['Asesor',p.ASESOR],
+    ['Vigencia',ecFmtFecha(r.ini)+' a '+ecFmtFecha(r.fin)]
+  ],colW);
+  const y2=ecBloque(doc,14+colW,y,'Datos del vehículo',[
+    ['Marca',p.MARCA],['Modelo',p.MODELO],['Tipo',p.TIPO],
+    ['Color',p.COLOR],['Placas',p.PLACAS],['Serie',p.SERIE]
+  ],colW);
+  y=Math.max(y1,y2)+4;
+
+  doc.autoTable({
+    startY:y, theme:'grid', margin:{left:14,right:14},
+    head:[['Costo total','Pago inicial','Total pagado','Saldo','Mensualidad','Próx. pago']],
+    body:[[ecMoneda(r.costo),ecMoneda(r.inicial),ecMoneda(r.totalPagado),ecMoneda(r.saldo),ecMoneda(r.mensual),ecFmtFecha(r.proximo)]],
+    headStyles:{fillColor:[22,35,61],fontSize:8,halign:'center'},
+    bodyStyles:{fontSize:9.5,halign:'center',fontStyle:'bold',textColor:[22,35,61]}
+  });
+  y=doc.lastAutoTable.finalY+6;
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(14,124,102);
+  doc.text('PAGOS REALIZADOS',14,y); y+=2;
+  doc.autoTable({
+    startY:y, margin:{left:14,right:14},
+    head:[['#','Fecha','Recibo','Concepto','Monto']],
+    body:r.tabla.map((t,i)=>[i+1,ecFmtFecha(t.fecha),String(t.recibo==null?'—':t.recibo),t.tipo,ecMoneda(t.monto)]),
+    headStyles:{fillColor:[14,124,102],fontSize:8},
+    bodyStyles:{fontSize:8.5},columnStyles:{0:{cellWidth:8,halign:'center'},4:{halign:'right'}}
+  });
+  y=doc.lastAutoTable.finalY+6;
+
+  if(r.calendario.length){
+    const colE={'Pagada':[14,124,102],'Vencida':[220,38,38],'Pendiente':[107,118,137],'Parcial':[217,119,6]};
+    doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(58,74,102);
+    doc.text('CALENDARIO DE MENSUALIDADES',14,y); y+=2;
+    doc.autoTable({
+      startY:y, margin:{left:14,right:14},
+      head:[['Mensualidad','Vence','Monto','Estado']],
+      body:r.calendario.map(c=>[c.n,ecFmtFecha(c.vencimiento),ecMoneda(c.monto),c.estado]),
+      headStyles:{fillColor:[58,74,102],fontSize:8},
+      bodyStyles:{fontSize:8.5},columnStyles:{0:{cellWidth:24,halign:'center'},2:{halign:'right'},3:{halign:'center'}},
+      didParseCell:d=>{ if(d.section==='body'&&d.column.index===3){ const c=colE[d.cell.raw]; if(c){ d.cell.styles.textColor=c; d.cell.styles.fontStyle='bold'; } } }
+    });
+  }
+  if(r.saldo<=0 && r.costo>0){
+    doc.setTextColor(14,124,102); doc.setFont('times','bold'); doc.setFontSize(60);
+    if(doc.setGState) doc.setGState(new doc.GState({opacity:0.12}));
+    doc.text('PAGADA',W/2,doc.internal.pageSize.getHeight()/2,{align:'center',angle:32});
+    if(doc.setGState) doc.setGState(new doc.GState({opacity:1}));
+  }
+  const H=doc.internal.pageSize.getHeight(), n=doc.internal.getNumberOfPages();
+  for(let i=1;i<=n;i++){ doc.setPage(i); doc.setDrawColor(220,225,234); doc.line(14,H-14,W-14,H-14);
+    doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(150,158,170);
+    doc.text(EC_CFG.nombre+' · Documento informativo de cobranza',14,H-9);
+    doc.text('Página '+i+' de '+n,W-14,H-9,{align:'right'}); }
+  return doc;
+}
+
+// Carga jsPDF + autotable bajo demanda (CDN), como la carga de SheetJS.
+let _ecLibs=false;
+function ecLoadLibs(cb){
+  if(_ecLibs && window.jspdf && window.jspdf.jsPDF){ return cb(); }
+  function inject(src,next){ const s=document.createElement('script'); s.src=src; s.onload=next; s.onerror=()=>toast('⚠️ No se pudieron cargar las librerías PDF', true); document.head.appendChild(s); }
+  const haveJsPDF=()=>window.jspdf && window.jspdf.jsPDF;
+  const haveAuto =()=>{ try{ return !!(window.jspdf.jsPDF.API && window.jspdf.jsPDF.API.autoTable); }catch(e){ return false; } };
+  const step2=()=>{ if(haveAuto()){ _ecLibs=true; cb(); } else inject('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js',()=>{_ecLibs=true;cb();}); };
+  if(haveJsPDF()) step2();
+  else inject('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',step2);
+}
+
+// Adaptador: traduce el registro `r` de Reportes de Cobranza a la forma `p`
+// que espera el generador (mismos nombres de campo que Consulta de Pólizas).
+function ecAdaptRegistro(r){
+  return {
+    POLIZA: r.poliza,
+    NOMBRE: r.nombre,
+    TELEFONO: r.telefono,
+    ESTATUS: r.estatus,
+    COBERTURA: r.cobertura,
+    'TIPO DE POLIZA': r.tipoPoliza,
+    ASESOR: r.asesor,
+    MARCA: r.vehiculo,          // en Bd Clientes la marca vive en "Vehículo"
+    MODELO: r.modeloAnio,
+    TIPO: r.tipoVeh,
+    COLOR: r.color,
+    PLACAS: r.placas,
+    SERIE: r.serie,
+    'INICIO VIGENCIA': r.inicio,     // Date; ecParseFecha lo admite
+    'TERMINO VIGENCIA': r.termino,
+    COSTO: r.costo,
+    'PAGO INICIAL': r.inicial,
+    'PAGO MENSUAL': r.mensual,
+    PAGOS: (r.pagos||[]).map(x=>({
+      recibo: x.recibo,
+      fecha:  x.fecha,
+      monto:  x.monto,
+      _f:     x.fecha ? x.fecha.getTime() : 0
+    }))
+  };
+}
+
+function generarEstadoCuentaReporte(poliza){
+  const r = DB.find(x=>x.poliza===poliza)
+         || DB.find(x=>x.poliza.toUpperCase()===String(poliza||'').toUpperCase());
+  if(!r){ toast('No se encontró la póliza para el estado de cuenta.', true); return; }
+  const tienePagos = Array.isArray(r.pagos) && r.pagos.length>0;
+  if(r.costo===0 && r.inicial===0 && !tienePagos){
+    toast('⚠️ Esta póliza no tiene datos financieros cargados.', true);
+    return;
+  }
+  toast('📄 Generando estado de cuenta…');
+  ecLoadLibs(()=>{
+    try{
+      const doc=ecPDF(ecAdaptRegistro(r));
+      doc.save('estado_cuenta_'+String(r.poliza||'poliza').replace(/[^\w-]/g,'')+'.pdf');
+    }catch(e){ toast('Error al generar el estado de cuenta: '+e.message, true); }
+  });
+}
 </script>
 </body>
 </html>
