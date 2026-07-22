@@ -472,6 +472,13 @@
           <input type="date" id="rdiaFechaFin">
           <button class="rdia-btn-aplicar" id="btnAplicarRango">Aplicar rango</button>
         </div>
+        <span class="rdia-sep">|</span>
+        <div class="rdia-rango">
+          <label for="rdiaFiltroUsr">Usuario</label>
+          <select id="rdiaFiltroUsr" style="padding:6px 10px;border:1px solid var(--linea);border-radius:8px;font-size:.83rem;font-family:inherit;color:var(--texto)">
+            <option value="">Todos</option>
+          </select>
+        </div>
       </div>
 
       <div class="rdia-body">
@@ -1870,6 +1877,16 @@ function fechaDiaISO(isoStr){
   const [y,m,d]=isoStr.slice(0,10).split('-');
   return `${d}/${m}/${y}`;
 }
+// Normaliza cualquier formato de fecha de gestión a "YYYY-MM-DD"
+// Soporta: string completo de Date ("Fri Jul 10 2026 ..."), ISO, timestamp
+function gFechaISO(g){
+  const f=g.fecha;
+  if(!f) return '';
+  if(typeof f==='string' && /^\d{4}-\d{2}-\d{2}/.test(f)) return f.slice(0,10);
+  const d=new Date(f);
+  if(!isNaN(d.getTime())) return fechaISO(d);
+  return '';
+}
 
 /* ---- Atajos de rango ---- */
 function rangoChip(chip){
@@ -1928,6 +1945,13 @@ function initRdiaControles(){
     if(d>h){ alert('La fecha de inicio no puede ser mayor que la de fin.'); return; }
     setRango(d,h,null);
   });
+  // Poblar select de usuarios con los que tienen gestiones
+  const selUsr=$('#rdiaFiltroUsr');
+  if(selUsr){
+    const usuarios=[...new Set(getGestiones().map(g=>g.usuario||'').filter(Boolean))].sort();
+    selUsr.innerHTML='<option value="">Todos</option>'+usuarios.map(u=>`<option value="${u}">${u}</option>`).join('');
+    selUsr.addEventListener('change', renderReporteDia);
+  }
 }
 
 /* ---- Utilidades de visualización ---- */
@@ -1958,10 +1982,13 @@ function colorResultado(r){
 /* ---- Render principal ---- */
 function renderReporteDia(){
   const todas = getGestiones();
+  const usrFiltro = ($('#rdiaFiltroUsr')||{value:''}).value || '';
   const gest = todas.filter(g=>{
     if(!g.fecha) return false;
-    const dia=g.fecha.slice(0,10);
-    return dia >= _rdiaDesde && dia <= _rdiaHasta;
+    const dia=gFechaISO(g);
+    if(dia < _rdiaDesde || dia > _rdiaHasta) return false;
+    if(usrFiltro && (g.usuario||'') !== usrFiltro) return false;
+    return true;
   }).sort((a,b)=>(b.timestamp||0)-(a.timestamp||0));
 
   // --- Título del período ---
@@ -2050,7 +2077,7 @@ function renderReporteDia(){
         if(pol) cob=pol.cobrador;
       }
       return `<tr>
-        <td>${fechaDiaISO(g.fecha?g.fecha.slice(0,10):'')}</td>
+        <td>${fechaDiaISO(gFechaISO(g))}</td>
         <td>${horaDeTimestamp(g.timestamp)}</td>
         <td><b>${g.poliza||'—'}</b></td>
         <td class="rdt-nom">${g.nombre||'—'}</td>
@@ -2068,10 +2095,13 @@ function renderReporteDia(){
 /* ---- Exportar a Excel el reporte en pantalla ---- */
 $('#btnExportarReporte').addEventListener('click',()=>{
   const todas=getGestiones();
+  const usrFiltroExp = ($('#rdiaFiltroUsr')||{value:''}).value || '';
   const gest=todas.filter(g=>{
     if(!g.fecha) return false;
-    const dia=g.fecha.slice(0,10);
-    return dia>=_rdiaDesde && dia<=_rdiaHasta;
+    const dia=gFechaISO(g);
+    if(dia < _rdiaDesde || dia > _rdiaHasta) return false;
+    if(usrFiltroExp && (g.usuario||'') !== usrFiltroExp) return false;
+    return true;
   }).sort((a,b)=>(b.timestamp||0)-(a.timestamp||0));
 
   if(!gest.length){ alert('No hay gestiones en el período seleccionado.'); return; }
