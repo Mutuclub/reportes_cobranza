@@ -1534,8 +1534,16 @@ function consultarPoliza(){
         <div class="fc"><div class="fl">Retorno tarjeta</div><div class="fv">${fmtCampoTexto(r.retornoTarjeta)}</div></div>
         <div class="fc"><div class="fl">Próximo pago</div><div class="fv">${fmtFecha(r.proximoPago)}</div></div>
         <div class="fc"><div class="fl">Teléfono</div><div class="fv">${r.telefono||'—'}</div></div>
-        <div class="fc"><div class="fl">Placas</div><div class="fv">${r.placas||'—'}</div></div>
         <div class="fc"><div class="fl">Asesor</div><div class="fv">${r.asesor||'—'}</div></div>
+      </div>
+      <div style="border-top:1px solid var(--linea);padding:10px 14px 4px;font-size:.72rem;color:var(--suave);text-transform:uppercase;letter-spacing:.4px;font-weight:700;">🚗 Datos del vehículo</div>
+      <div class="ficha-grid">
+        <div class="fc"><div class="fl">Marca / Vehículo</div><div class="fv">${r.vehiculo||'—'}</div></div>
+        <div class="fc"><div class="fl">Modelo / Año</div><div class="fv">${r.modeloAnio||'—'}</div></div>
+        <div class="fc"><div class="fl">Tipo</div><div class="fv">${r.tipoVeh||'—'}</div></div>
+        <div class="fc"><div class="fl">Color</div><div class="fv">${r.color||'—'}</div></div>
+        <div class="fc"><div class="fl">Placas</div><div class="fv">${r.placas||'—'}</div></div>
+        <div class="fc"><div class="fl">Serie / NIV</div><div class="fv">${r.serie||'—'}</div></div>
       </div>
       <div class="ficha-acciones" style="margin:12px 0 4px">
         <button class="btn" data-estado-cuenta="${r.poliza}">📄 Generar Estado de Cuenta (PDF)</button>
