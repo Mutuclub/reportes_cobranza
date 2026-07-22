@@ -202,6 +202,57 @@
   .gi-meta{color:var(--suave);font-size:.72rem;margin-top:5px;display:flex;justify-content:space-between;align-items:center;gap:8px}
   .gi-del{background:none;border:none;color:var(--riesgo);cursor:pointer;font-size:.72rem;font-family:inherit}
   .gestion-vacio{color:var(--suave);font-size:.82rem;padding:8px 0}
+  /* ---------- Campo usuario en formulario de gestión ---------- */
+  .gestion-usuario-tag{
+    display:flex;align-items:center;gap:6px;background:#eef2f7;border:1px solid var(--linea);
+    border-radius:8px;padding:7px 11px;font-size:.83rem;font-weight:600;color:var(--tinta);
+    white-space:nowrap;
+  }
+  .gestion-usuario-tag span{opacity:.65;font-weight:400}
+
+  /* ---------- Reporte del Día (Admin) ---------- */
+  #reporteDia{display:none}
+  #reporteDia.visible{display:block}
+  .rdia-header{background:var(--tinta);color:#fff;border-radius:12px 12px 0 0;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+  .rdia-header h3{font-size:1.05rem;font-weight:700;margin:0}
+  .rdia-header .rdia-fecha{font-size:.8rem;opacity:.8}
+  .rdia-body{background:var(--blanco);border:1px solid var(--linea);border-top:none;border-radius:0 0 12px 12px;padding:20px;box-shadow:var(--sombra)}
+  .rdia-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:20px}
+  .rdia-kpi{background:#f8fafc;border:1px solid var(--linea);border-radius:10px;padding:13px 15px;text-align:center}
+  .rdia-kpi .rk-n{font-size:2rem;font-weight:700;letter-spacing:-.5px;line-height:1}
+  .rdia-kpi .rk-l{font-size:.72rem;color:var(--suave);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-top:4px}
+  .rdia-kpi.rk-total .rk-n{color:var(--tinta)}
+  .rdia-kpi.rk-gest .rk-n{color:var(--ok)}
+  .rdia-kpi.rk-usr .rk-n{color:var(--inicial)}
+  .rdia-kpi.rk-prom .rk-n{color:var(--atraso)}
+  .rdia-grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+  @media(max-width:640px){.rdia-grid2{grid-template-columns:1fr}}
+  .rdia-bloque{background:#f8fafc;border:1px solid var(--linea);border-radius:10px;overflow:hidden}
+  .rdia-bloque-head{background:#eef2f7;padding:9px 14px;font-size:.76rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--tinta);border-bottom:1px solid var(--linea)}
+  .rdia-bar-row{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid #f0f2f5;font-size:.83rem}
+  .rdia-bar-row:last-child{border-bottom:none}
+  .rdia-bar-label{min-width:120px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0}
+  .rdia-bar-track{flex:1;height:10px;background:#e4e9ef;border-radius:6px;overflow:hidden}
+  .rdia-bar-fill{height:100%;border-radius:6px;background:var(--tinta);transition:.3s}
+  .rdia-bar-val{font-weight:700;color:var(--tinta);min-width:26px;text-align:right;font-size:.83rem}
+  .rdia-timeline{max-height:320px;overflow-y:auto}
+  .rdia-tl-item{display:flex;gap:12px;padding:9px 14px;border-bottom:1px solid #f0f2f5;font-size:.82rem;align-items:flex-start}
+  .rdia-tl-item:last-child{border-bottom:none}
+  .rdia-tl-hora{color:var(--suave);min-width:46px;font-variant-numeric:tabular-nums;padding-top:1px}
+  .rdia-tl-dot{width:10px;height:10px;border-radius:50%;background:var(--tinta);flex-shrink:0;margin-top:3px}
+  .rdia-tl-main{flex:1}
+  .rdia-tl-pol{font-weight:700;color:var(--tinta)}
+  .rdia-tl-tipo{color:var(--suave);font-size:.76rem}
+  .rdia-tl-usr{display:inline-block;background:#eef2f7;color:var(--tinta);border-radius:20px;padding:1px 7px;font-size:.7rem;font-weight:600;margin-top:2px}
+  .rdia-empty{padding:24px;text-align:center;color:var(--suave);font-size:.88rem}
+  .rdia-empty .ico{font-size:1.8rem;display:block;margin-bottom:6px;opacity:.5}
+  .rdia-tbl-wrap{overflow-x:auto}
+  .rdia-tbl{width:100%;border-collapse:collapse;font-size:.82rem}
+  .rdia-tbl thead th{background:#eef2f7;color:var(--tinta);text-align:left;padding:8px 12px;font-size:.72rem;text-transform:uppercase;letter-spacing:.3px;font-weight:700;white-space:nowrap;border-bottom:1px solid var(--linea)}
+  .rdia-tbl tbody td{padding:8px 12px;border-bottom:1px solid #f0f2f5;white-space:nowrap}
+  .rdia-tbl tbody tr:hover{background:#f8fafc}
+  .rdia-tbl .rdt-nom{max-width:180px;overflow:hidden;text-overflow:ellipsis}
+
   @media (max-width:640px){
     .header-meta{gap:10px}
     .wrap{padding:14px}
@@ -275,6 +326,7 @@
       <button class="header-btn" id="btnRecargar" style="display:none" title="Cargar la versión más reciente del Excel (reemplaza los datos actuales)">📄 Actualizar Excel</button>
       <input type="file" id="fileInputRecarga" accept=".xlsx,.xls" style="display:none">
       <button class="header-btn" id="btnUsuarios" style="display:none">⚙️ Usuarios</button>
+      <button class="header-btn" id="btnReporteDia" style="display:none" title="Ver resumen de gestiones del día">📊 Reporte del Día</button>
       <button class="header-btn" id="btnLogout">Salir</button>
     </div>
   </div>
@@ -368,6 +420,47 @@
     </div>
 
     <div class="foot-note" id="footNote"></div>
+
+    <!-- ===== REPORTE DEL DÍA (Admin) ===== -->
+    <div id="reporteDia" style="margin-top:22px">
+      <div class="rdia-header">
+        <h3>📊 Reporte del Día</h3>
+        <span class="rdia-fecha" id="rdiaTitFecha"></span>
+      </div>
+      <div class="rdia-body">
+        <!-- KPIs -->
+        <div class="rdia-kpis" id="rdiaKpis"></div>
+        <!-- Grilla: Por Tipo / Por Resultado -->
+        <div class="rdia-grid2">
+          <div class="rdia-bloque">
+            <div class="rdia-bloque-head">Por tipo de gestión</div>
+            <div id="rdiaTipos"></div>
+          </div>
+          <div class="rdia-bloque">
+            <div class="rdia-bloque-head">Por resultado</div>
+            <div id="rdiaResultados"></div>
+          </div>
+        </div>
+        <!-- Por Usuario -->
+        <div class="rdia-bloque" style="margin-bottom:16px">
+          <div class="rdia-bloque-head">Por usuario / cobrador</div>
+          <div id="rdiaUsuarios"></div>
+        </div>
+        <!-- Tabla detallada -->
+        <div class="rdia-bloque">
+          <div class="rdia-bloque-head">Detalle de gestiones del día</div>
+          <div class="rdia-tbl-wrap">
+            <table class="rdia-tbl">
+              <thead><tr>
+                <th>Hora</th><th>Póliza</th><th class="rdt-nom">Nombre</th>
+                <th>Tipo</th><th>Resultado</th><th>Próxima acción</th><th>Notas</th><th>Usuario</th>
+              </tr></thead>
+              <tbody id="rdiaDetalle"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
   </div>
 </div>
@@ -1256,6 +1349,7 @@ function gestionBoxHTML(r){
         </select>
         <input type="date" id="gProximaAccion" title="Próxima acción (opcional)">
         <input type="text" id="gNotas" placeholder="Notas (opcional)">
+        <div class="gestion-usuario-tag" title="Se registrará con tu usuario de sesión">👤 <span>${(()=>{ const s=getSession(); return s?s.usuario:'—'; })()}</span></div>
         <button class="btn" id="btnGuardarGestion" data-poliza="${r.poliza}" data-nombre="${(r.nombre||'').replace(/"/g,'&quot;')}">💾 Guardar gestión</button>
       </div>
       <div class="gestion-lista">
@@ -1285,6 +1379,7 @@ $('#consultaResultado').addEventListener('click', async e=>{
     });
     consultarPoliza();
     if(repActual==='gestiones') render();
+    if(reporteDiaVisible) renderReporteDia();
     return;
   }
   const del=e.target.closest('[data-borrar-gestion]');
@@ -1293,6 +1388,7 @@ $('#consultaResultado').addEventListener('click', async e=>{
     await borrarGestionRemota(del.dataset.borrarGestion);
     consultarPoliza();
     if(repActual==='gestiones') render();
+    if(reporteDiaVisible) renderReporteDia();
   }
 });
 
@@ -1303,6 +1399,7 @@ $('#tbody').addEventListener('click', async e=>{
   if(!confirm('¿Eliminar esta gestión?')) return;
   await borrarGestionRemota(del.dataset.borrarGestion);
   render();
+  if(reporteDiaVisible) renderReporteDia();
 });
 
 function renderGestiones(){
@@ -1537,6 +1634,7 @@ function aplicarSesion(){
   $('#sessionBar').classList.remove('hidden');
   $('#sessionUser').textContent = `👤 ${s.usuario} (${s.rol==='admin'?'Admin':'Usuario'})`;
   $('#btnUsuarios').style.display = s.rol==='admin' ? 'flex' : 'none';
+  $('#btnReporteDia').style.display = s.rol==='admin' ? 'flex' : 'none';
   actualizarBotonRecarga();
   $('#dropzone').classList.add('hidden');   // los datos vienen de GitHub; el dropzone es respaldo (Admin) ante fallo
   cargarDatosRemotos();                      // todos jalan la misma fuente al entrar
@@ -1667,6 +1765,121 @@ $('#tbodyUsuarios').addEventListener('click', async e=>{
     }
   }
 });
+
+/* ============================================================
+   REPORTE DEL DÍA (Admin)
+   Resumen en pantalla de todas las gestiones registradas hoy:
+   KPIs · distribución por tipo · por resultado · por usuario · detalle.
+   ============================================================ */
+let reporteDiaVisible = false;
+
+function fechaHoyISO(){
+  const h=new Date();
+  return h.getFullYear()+'-'+String(h.getMonth()+1).padStart(2,'0')+'-'+String(h.getDate()).padStart(2,'0');
+}
+function horaDeTimestamp(ts){
+  if(!ts) return '—';
+  const d=new Date(ts);
+  return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+
+function barChart(contenedor, datos, colorFn){
+  // datos: [{label, n}] ordenados descendente
+  const max = datos.reduce((m,d)=>Math.max(m,d.n),1);
+  if(!datos.length){
+    contenedor.innerHTML='<div class="rdia-empty"><span class="ico">📭</span>Sin datos</div>';
+    return;
+  }
+  contenedor.innerHTML = datos.map(d=>{
+    const pct = Math.round((d.n/max)*100);
+    const color = colorFn ? colorFn(d.label) : 'var(--tinta)';
+    return `<div class="rdia-bar-row">
+      <div class="rdia-bar-label" title="${d.label}">${d.label}</div>
+      <div class="rdia-bar-track"><div class="rdia-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+      <div class="rdia-bar-val">${d.n}</div>
+    </div>`;
+  }).join('');
+}
+
+function colorResultado(r){
+  if(r.includes('promesa')) return 'var(--ok)';
+  if(r.includes('niega') || r.includes('localizable') || r.includes('equivocado')) return 'var(--riesgo)';
+  if(r.includes('contestó') || r.includes('sin compromiso')) return 'var(--atraso)';
+  return 'var(--tinta)';
+}
+
+function renderReporteDia(){
+  const hoy = fechaHoyISO();
+  const todas = getGestiones();
+  // filtrar las del día: se compara la fecha guardada (YYYY-MM-DD) con hoy
+  const gestHoy = todas.filter(g=> g.fecha && g.fecha.slice(0,10) === hoy)
+                        .sort((a,b)=> (b.timestamp||0)-(a.timestamp||0));
+
+  // --- título ---
+  const fmtHoyLargo = new Date().toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  $('#rdiaTitFecha').textContent = fmtHoyLargo;
+
+  // --- KPIs ---
+  const usuarios = [...new Set(gestHoy.map(g=>g.usuario||'—'))];
+  const conPromesa = gestHoy.filter(g=>(g.resultado||'').toLowerCase().includes('promesa')).length;
+  $('#rdiaKpis').innerHTML = [
+    {cls:'rk-total',n:gestHoy.length, l:'Gestiones hoy'},
+    {cls:'rk-gest', n:conPromesa,     l:'Promesas de pago'},
+    {cls:'rk-usr',  n:usuarios.length,l:'Usuarios activos'},
+    {cls:'rk-prom', n:gestHoy.filter(g=>g.proximaAccion).length, l:'Con seguimiento'},
+  ].map(k=>`<div class="rdia-kpi ${k.cls}"><div class="rk-n">${k.n}</div><div class="rk-l">${k.l}</div></div>`).join('');
+
+  // --- Por tipo ---
+  const byTipo={};
+  gestHoy.forEach(g=>{ const t=g.tipo||'Otro'; byTipo[t]=(byTipo[t]||0)+1; });
+  barChart($('#rdiaTipos'), Object.entries(byTipo).map(([label,n])=>({label,n})).sort((a,b)=>b.n-a.n), null);
+
+  // --- Por resultado ---
+  const byRes={};
+  gestHoy.forEach(g=>{ const r=g.resultado||'—'; byRes[r]=(byRes[r]||0)+1; });
+  barChart($('#rdiaResultados'), Object.entries(byRes).map(([label,n])=>({label,n})).sort((a,b)=>b.n-a.n), colorResultado);
+
+  // --- Por usuario ---
+  const byUsr={};
+  gestHoy.forEach(g=>{ const u=g.usuario||'—'; byUsr[u]=(byUsr[u]||0)+1; });
+  barChart($('#rdiaUsuarios'), Object.entries(byUsr).map(([label,n])=>({label,n})).sort((a,b)=>b.n-a.n), null);
+
+  // --- Detalle ---
+  const det = $('#rdiaDetalle');
+  if(!gestHoy.length){
+    det.innerHTML=`<tr><td colspan="8"><div class="rdia-empty"><span class="ico">📭</span>No hay gestiones registradas hoy todavía.</div></td></tr>`;
+  }else{
+    det.innerHTML = gestHoy.map(g=>`<tr>
+      <td>${horaDeTimestamp(g.timestamp)}</td>
+      <td><b>${g.poliza||'—'}</b></td>
+      <td class="rdt-nom">${g.nombre||'—'}</td>
+      <td>${g.tipo||'—'}</td>
+      <td>${g.resultado||'—'}</td>
+      <td>${g.proximaAccion?fmtFecha(parseFecha(g.proximaAccion)):'—'}</td>
+      <td style="max-width:160px;white-space:normal;font-size:.79rem">${g.notas||'—'}</td>
+      <td><span class="rdia-tl-usr">${g.usuario||'—'}</span></td>
+    </tr>`).join('');
+  }
+}
+
+$('#btnReporteDia').addEventListener('click', ()=>{
+  reporteDiaVisible = !reporteDiaVisible;
+  const panel = $('#reporteDia');
+  if(reporteDiaVisible){
+    panel.classList.add('visible');
+    renderReporteDia();
+    panel.scrollIntoView({behavior:'smooth', block:'start'});
+    $('#btnReporteDia').textContent = '📊 Ocultar Reporte';
+  }else{
+    panel.classList.remove('visible');
+    $('#btnReporteDia').textContent = '📊 Reporte del Día';
+  }
+});
+
+// Re-renderizar el reporte del día cuando se agrega una gestión nueva (si está visible)
+const _addGestionRemotaOrig = addGestionRemota;
+// El refresco ya ocurre en consultarPoliza() / render(), así que basta con
+// un gancho en el evento 'click' del botón guardar (ver listener existente).
 
 /* arranque */
 (async ()=>{
