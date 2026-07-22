@@ -210,9 +210,34 @@
   }
   .gestion-usuario-tag span{opacity:.65;font-weight:400}
 
-  /* ---------- Reporte del Día (Admin) ---------- */
+  /* ---------- Reporte de Gestiones (Admin) ---------- */
   #reporteDia{display:none}
   #reporteDia.visible{display:block}
+  /* Controles de rango */
+  .rdia-controles{background:var(--blanco);border:1px solid var(--linea);border-top:none;padding:14px 20px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--linea)}
+  .rdia-chips{display:flex;gap:6px;flex-wrap:wrap}
+  .rdia-chip{padding:5px 12px;border:1px solid var(--linea);border-radius:20px;background:var(--blanco);font-size:.78rem;font-weight:600;color:var(--suave);cursor:pointer;font-family:inherit;transition:.15s}
+  .rdia-chip:hover{background:#eef2f7;color:var(--tinta)}
+  .rdia-chip.activo{background:var(--tinta);color:#fff;border-color:var(--tinta)}
+  .rdia-sep{color:var(--linea);font-size:1.1rem;align-self:center}
+  .rdia-rango{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .rdia-rango label{font-size:.78rem;font-weight:600;color:var(--suave);white-space:nowrap}
+  .rdia-rango input[type=date]{padding:6px 10px;border:1px solid var(--linea);border-radius:8px;font-size:.83rem;font-family:inherit;color:var(--texto)}
+  .rdia-btn-aplicar{padding:6px 14px;border:1px solid var(--tinta);background:var(--tinta);color:#fff;border-radius:8px;font-size:.8rem;font-weight:600;cursor:pointer;font-family:inherit}
+  .rdia-btn-aplicar:hover{background:var(--tinta-2)}
+  /* Tabla acumulada por usuario */
+  .rdia-usr-tbl{width:100%;border-collapse:collapse;font-size:.83rem}
+  .rdia-usr-tbl thead th{background:#eef2f7;color:var(--tinta);text-align:left;padding:8px 12px;font-size:.72rem;text-transform:uppercase;letter-spacing:.3px;font-weight:700;white-space:nowrap;border-bottom:1px solid var(--linea)}
+  .rdia-usr-tbl tbody td{padding:8px 12px;border-bottom:1px solid #f0f2f5;white-space:nowrap;vertical-align:middle}
+  .rdia-usr-tbl tbody tr:last-child td{border-bottom:none}
+  .rdia-usr-tbl .rdu-total{font-weight:700;color:var(--tinta)}
+  .rdia-usr-tbl .rdu-bar{width:120px}
+  .rdia-usr-tbl .rdu-track{height:8px;background:#e4e9ef;border-radius:6px;overflow:hidden;min-width:60px}
+  .rdia-usr-tbl .rdu-fill{height:100%;border-radius:6px;background:var(--tinta)}
+  /* Acción exportar */
+  .rdia-acciones{display:flex;justify-content:flex-end;margin-bottom:14px}
+  .rdia-btn-export{padding:8px 16px;border:1px solid var(--ok);background:var(--ok);color:#fff;border-radius:8px;font-size:.83rem;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:7px}
+  .rdia-btn-export:hover{background:#1a6b43}
   .rdia-header{background:var(--tinta);color:#fff;border-radius:12px 12px 0 0;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
   .rdia-header h3{font-size:1.05rem;font-weight:700;margin:0}
   .rdia-header .rdia-fecha{font-size:.8rem;opacity:.8}
@@ -421,15 +446,38 @@
 
     <div class="foot-note" id="footNote"></div>
 
-    <!-- ===== REPORTE DEL DÍA (Admin) ===== -->
+    <!-- ===== REPORTE DE GESTIONES (Admin) ===== -->
     <div id="reporteDia" style="margin-top:22px">
       <div class="rdia-header">
-        <h3>📊 Reporte del Día</h3>
-        <span class="rdia-fecha" id="rdiaTitFecha"></span>
+        <div>
+          <h3>📊 Reporte de Gestiones</h3>
+          <div class="rdia-fecha" id="rdiaTitFecha"></div>
+        </div>
+        <button class="rdia-btn-export" id="btnExportarReporte">⬇️ Exportar a Excel</button>
       </div>
+
+      <!-- Controles de período -->
+      <div class="rdia-controles">
+        <div class="rdia-chips">
+          <button class="rdia-chip activo" data-chip="hoy">Hoy</button>
+          <button class="rdia-chip" data-chip="ayer">Ayer</button>
+          <button class="rdia-chip" data-chip="semana">Esta semana</button>
+          <button class="rdia-chip" data-chip="mes">Este mes</button>
+        </div>
+        <span class="rdia-sep">|</span>
+        <div class="rdia-rango">
+          <label for="rdiaFechaIni">Del</label>
+          <input type="date" id="rdiaFechaIni">
+          <label for="rdiaFechaFin">al</label>
+          <input type="date" id="rdiaFechaFin">
+          <button class="rdia-btn-aplicar" id="btnAplicarRango">Aplicar rango</button>
+        </div>
+      </div>
+
       <div class="rdia-body">
         <!-- KPIs -->
         <div class="rdia-kpis" id="rdiaKpis"></div>
+
         <!-- Grilla: Por Tipo / Por Resultado -->
         <div class="rdia-grid2">
           <div class="rdia-bloque">
@@ -441,19 +489,38 @@
             <div id="rdiaResultados"></div>
           </div>
         </div>
-        <!-- Por Usuario -->
+
+        <!-- Por usuario (tabla acumulada) -->
         <div class="rdia-bloque" style="margin-bottom:16px">
-          <div class="rdia-bloque-head">Por usuario / cobrador</div>
-          <div id="rdiaUsuarios"></div>
+          <div class="rdia-bloque-head">Resumen por usuario / cobrador</div>
+          <div class="rdia-tbl-wrap">
+            <table class="rdia-usr-tbl">
+              <thead><tr>
+                <th>Usuario</th>
+                <th>Gestiones</th>
+                <th>Promesas de pago</th>
+                <th>Con seguimiento</th>
+                <th>Actividad</th>
+              </tr></thead>
+              <tbody id="rdiaUsuarios"></tbody>
+            </table>
+          </div>
         </div>
+
+        <!-- Por cobrador (campo del Excel) -->
+        <div class="rdia-bloque" style="margin-bottom:16px">
+          <div class="rdia-bloque-head">Por cobrador (campo de póliza)</div>
+          <div id="rdiaCobradores"></div>
+        </div>
+
         <!-- Tabla detallada -->
         <div class="rdia-bloque">
-          <div class="rdia-bloque-head">Detalle de gestiones del día</div>
+          <div class="rdia-bloque-head">Detalle de gestiones del período</div>
           <div class="rdia-tbl-wrap">
             <table class="rdia-tbl">
               <thead><tr>
-                <th>Hora</th><th>Póliza</th><th class="rdt-nom">Nombre</th>
-                <th>Tipo</th><th>Resultado</th><th>Próxima acción</th><th>Notas</th><th>Usuario</th>
+                <th>Fecha</th><th>Hora</th><th>Póliza</th><th class="rdt-nom">Nombre</th>
+                <th>Cobrador</th><th>Tipo</th><th>Resultado</th><th>Próxima acción</th><th>Notas</th><th>Usuario</th>
               </tr></thead>
               <tbody id="rdiaDetalle"></tbody>
             </table>
@@ -1775,24 +1842,96 @@ $('#tbodyUsuarios').addEventListener('click', async e=>{
 });
 
 /* ============================================================
-   REPORTE DEL DÍA (Admin)
-   Resumen en pantalla de todas las gestiones registradas hoy:
-   KPIs · distribución por tipo · por resultado · por usuario · detalle.
+   REPORTE DE GESTIONES (Admin)
+   Filtrable por día único o rango · atajos rápidos (Hoy / Ayer / Semana / Mes)
+   KPIs · por tipo · por resultado · por usuario (tabla acumulada) · por cobrador · detalle
+   Exportación a Excel del período seleccionado.
    ============================================================ */
 let reporteDiaVisible = false;
+// Estado del rango activo
+let _rdiaDesde = '';   // YYYY-MM-DD
+let _rdiaHasta = '';   // YYYY-MM-DD
 
 function fechaHoyISO(){
   const h=new Date();
   return h.getFullYear()+'-'+String(h.getMonth()+1).padStart(2,'0')+'-'+String(h.getDate()).padStart(2,'0');
+}
+function fechaISO(d){
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
 function horaDeTimestamp(ts){
   if(!ts) return '—';
   const d=new Date(ts);
   return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
 }
+function fechaDiaISO(isoStr){
+  // Devuelve "DD/MM/YYYY" desde "YYYY-MM-DD"
+  if(!isoStr) return '—';
+  const [y,m,d]=isoStr.slice(0,10).split('-');
+  return `${d}/${m}/${y}`;
+}
 
+/* ---- Atajos de rango ---- */
+function rangoChip(chip){
+  const hoy=new Date();
+  let desde, hasta;
+  if(chip==='hoy'){
+    desde=hasta=fechaISO(hoy);
+  }else if(chip==='ayer'){
+    const a=new Date(hoy); a.setDate(a.getDate()-1);
+    desde=hasta=fechaISO(a);
+  }else if(chip==='semana'){
+    const lunes=new Date(hoy);
+    lunes.setDate(hoy.getDate()-((hoy.getDay()+6)%7)); // lunes de esta semana
+    desde=fechaISO(lunes); hasta=fechaISO(hoy);
+  }else if(chip==='mes'){
+    desde=fechaISO(new Date(hoy.getFullYear(),hoy.getMonth(),1));
+    hasta=fechaISO(hoy);
+  }
+  return {desde, hasta};
+}
+
+function activarChip(chip){
+  document.querySelectorAll('.rdia-chip').forEach(b=>b.classList.remove('activo'));
+  if(chip){
+    const btn=document.querySelector(`.rdia-chip[data-chip="${chip}"]`);
+    if(btn) btn.classList.add('activo');
+  }
+}
+
+function setRango(desde, hasta, chip){
+  _rdiaDesde=desde; _rdiaHasta=hasta;
+  $('#rdiaFechaIni').value=desde;
+  $('#rdiaFechaFin').value=hasta;
+  activarChip(chip||null);
+  renderReporteDia();
+}
+
+// Inicializar controles de rango con "Hoy"
+function initRdiaControles(){
+  const hoy=fechaHoyISO();
+  $('#rdiaFechaIni').value=hoy;
+  $('#rdiaFechaFin').value=hoy;
+  _rdiaDesde=hoy; _rdiaHasta=hoy;
+
+  document.querySelectorAll('.rdia-chip').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const chip=btn.dataset.chip;
+      const {desde,hasta}=rangoChip(chip);
+      setRango(desde,hasta,chip);
+    });
+  });
+  $('#btnAplicarRango').addEventListener('click',()=>{
+    const d=$('#rdiaFechaIni').value;
+    const h=$('#rdiaFechaFin').value;
+    if(!d||!h){ alert('Selecciona ambas fechas.'); return; }
+    if(d>h){ alert('La fecha de inicio no puede ser mayor que la de fin.'); return; }
+    setRango(d,h,null);
+  });
+}
+
+/* ---- Utilidades de visualización ---- */
 function barChart(contenedor, datos, colorFn){
-  // datos: [{label, n}] ordenados descendente
   const max = datos.reduce((m,d)=>Math.max(m,d.n),1);
   if(!datos.length){
     contenedor.innerHTML='<div class="rdia-empty"><span class="ico">📭</span>Sin datos</div>';
@@ -1816,78 +1955,227 @@ function colorResultado(r){
   return 'var(--tinta)';
 }
 
+/* ---- Render principal ---- */
 function renderReporteDia(){
-  const hoy = fechaHoyISO();
   const todas = getGestiones();
-  // filtrar las del día: se compara la fecha guardada (YYYY-MM-DD) con hoy
-  const gestHoy = todas.filter(g=> g.fecha && g.fecha.slice(0,10) === hoy)
-                        .sort((a,b)=> (b.timestamp||0)-(a.timestamp||0));
+  const gest = todas.filter(g=>{
+    if(!g.fecha) return false;
+    const dia=g.fecha.slice(0,10);
+    return dia >= _rdiaDesde && dia <= _rdiaHasta;
+  }).sort((a,b)=>(b.timestamp||0)-(a.timestamp||0));
 
-  // --- título ---
-  const fmtHoyLargo = new Date().toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
-  $('#rdiaTitFecha').textContent = fmtHoyLargo;
+  // --- Título del período ---
+  let titPeriodo;
+  if(_rdiaDesde===_rdiaHasta){
+    const d=new Date(_rdiaDesde+'T12:00:00');
+    titPeriodo=d.toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  }else{
+    titPeriodo=`${fechaDiaISO(_rdiaDesde)} — ${fechaDiaISO(_rdiaHasta)}`;
+  }
+  $('#rdiaTitFecha').textContent=titPeriodo;
 
   // --- KPIs ---
-  const usuarios = [...new Set(gestHoy.map(g=>g.usuario||'—'))];
-  const conPromesa = gestHoy.filter(g=>(g.resultado||'').toLowerCase().includes('promesa')).length;
-  $('#rdiaKpis').innerHTML = [
-    {cls:'rk-total',n:gestHoy.length, l:'Gestiones hoy'},
-    {cls:'rk-gest', n:conPromesa,     l:'Promesas de pago'},
-    {cls:'rk-usr',  n:usuarios.length,l:'Usuarios activos'},
-    {cls:'rk-prom', n:gestHoy.filter(g=>g.proximaAccion).length, l:'Con seguimiento'},
+  const usuarios=[...new Set(gest.map(g=>g.usuario||'—'))];
+  const conPromesa=gest.filter(g=>(g.resultado||'').toLowerCase().includes('promesa')).length;
+  const conSeguimiento=gest.filter(g=>g.proximaAccion).length;
+  const etiquetaTotal = _rdiaDesde===_rdiaHasta ? 'Gestiones del día' : 'Gestiones del período';
+  $('#rdiaKpis').innerHTML=[
+    {cls:'rk-total',n:gest.length,     l:etiquetaTotal},
+    {cls:'rk-gest', n:conPromesa,      l:'Promesas de pago'},
+    {cls:'rk-usr',  n:usuarios.length, l:'Usuarios activos'},
+    {cls:'rk-prom', n:conSeguimiento,  l:'Con seguimiento'},
   ].map(k=>`<div class="rdia-kpi ${k.cls}"><div class="rk-n">${k.n}</div><div class="rk-l">${k.l}</div></div>`).join('');
 
   // --- Por tipo ---
   const byTipo={};
-  gestHoy.forEach(g=>{ const t=g.tipo||'Otro'; byTipo[t]=(byTipo[t]||0)+1; });
+  gest.forEach(g=>{const t=g.tipo||'Otro'; byTipo[t]=(byTipo[t]||0)+1;});
   barChart($('#rdiaTipos'), Object.entries(byTipo).map(([label,n])=>({label,n})).sort((a,b)=>b.n-a.n), null);
 
   // --- Por resultado ---
   const byRes={};
-  gestHoy.forEach(g=>{ const r=g.resultado||'—'; byRes[r]=(byRes[r]||0)+1; });
+  gest.forEach(g=>{const r=g.resultado||'—'; byRes[r]=(byRes[r]||0)+1;});
   barChart($('#rdiaResultados'), Object.entries(byRes).map(([label,n])=>({label,n})).sort((a,b)=>b.n-a.n), colorResultado);
 
-  // --- Por usuario ---
+  // --- Por usuario: tabla acumulada ---
   const byUsr={};
-  gestHoy.forEach(g=>{ const u=g.usuario||'—'; byUsr[u]=(byUsr[u]||0)+1; });
-  barChart($('#rdiaUsuarios'), Object.entries(byUsr).map(([label,n])=>({label,n})).sort((a,b)=>b.n-a.n), null);
+  gest.forEach(g=>{
+    const u=g.usuario||'—';
+    if(!byUsr[u]) byUsr[u]={total:0,promesas:0,seguimiento:0};
+    byUsr[u].total++;
+    if((g.resultado||'').toLowerCase().includes('promesa')) byUsr[u].promesas++;
+    if(g.proximaAccion) byUsr[u].seguimiento++;
+  });
+  const usrData=Object.entries(byUsr).sort((a,b)=>b[1].total-a[1].total);
+  const maxUsr=usrData.reduce((m,[,v])=>Math.max(m,v.total),1);
+  const tdUsr=$('#rdiaUsuarios');
+  if(!usrData.length){
+    tdUsr.innerHTML=`<tr><td colspan="5"><div class="rdia-empty"><span class="ico">📭</span>Sin datos</div></td></tr>`;
+  }else{
+    tdUsr.innerHTML=usrData.map(([usr,v])=>{
+      const pct=Math.round((v.total/maxUsr)*100);
+      return `<tr>
+        <td><span class="rdia-tl-usr">${usr}</span></td>
+        <td class="rdu-total">${v.total}</td>
+        <td>${v.promesas}</td>
+        <td>${v.seguimiento}</td>
+        <td class="rdu-bar"><div class="rdu-track"><div class="rdu-fill" style="width:${pct}%"></div></div></td>
+      </tr>`;
+    }).join('');
+  }
+
+  // --- Por cobrador (campo del registro proveniente del Excel) ---
+  const byCob={};
+  gest.forEach(g=>{
+    // el cobrador puede venir de g.cobrador (si se guardó) o desde DB por póliza
+    let cob = g.cobrador;
+    if(!cob && g.poliza && DB && DB.length){
+      const pol=DB.find(x=>x.poliza===g.poliza);
+      if(pol) cob=pol.cobrador;
+    }
+    cob=cob||'Sin asignar';
+    byCob[cob]=(byCob[cob]||0)+1;
+  });
+  barChart($('#rdiaCobradores'), Object.entries(byCob).map(([label,n])=>({label,n})).sort((a,b)=>b.n-a.n), null);
 
   // --- Detalle ---
-  const det = $('#rdiaDetalle');
-  if(!gestHoy.length){
-    det.innerHTML=`<tr><td colspan="8"><div class="rdia-empty"><span class="ico">📭</span>No hay gestiones registradas hoy todavía.</div></td></tr>`;
+  const det=$('#rdiaDetalle');
+  if(!gest.length){
+    det.innerHTML=`<tr><td colspan="10"><div class="rdia-empty"><span class="ico">📭</span>No hay gestiones en el período seleccionado.</div></td></tr>`;
   }else{
-    det.innerHTML = gestHoy.map(g=>`<tr>
-      <td>${horaDeTimestamp(g.timestamp)}</td>
-      <td><b>${g.poliza||'—'}</b></td>
-      <td class="rdt-nom">${g.nombre||'—'}</td>
-      <td>${g.tipo||'—'}</td>
-      <td>${g.resultado||'—'}</td>
-      <td>${g.proximaAccion?fmtFecha(parseFecha(g.proximaAccion)):'—'}</td>
-      <td style="max-width:160px;white-space:normal;font-size:.79rem">${g.notas||'—'}</td>
-      <td><span class="rdia-tl-usr">${g.usuario||'—'}</span></td>
-    </tr>`).join('');
+    det.innerHTML=gest.map(g=>{
+      // cobrador para columna del detalle
+      let cob=g.cobrador;
+      if(!cob && g.poliza && DB && DB.length){
+        const pol=DB.find(x=>x.poliza===g.poliza);
+        if(pol) cob=pol.cobrador;
+      }
+      return `<tr>
+        <td>${fechaDiaISO(g.fecha?g.fecha.slice(0,10):'')}</td>
+        <td>${horaDeTimestamp(g.timestamp)}</td>
+        <td><b>${g.poliza||'—'}</b></td>
+        <td class="rdt-nom">${g.nombre||'—'}</td>
+        <td>${cob||'—'}</td>
+        <td>${g.tipo||'—'}</td>
+        <td>${g.resultado||'—'}</td>
+        <td>${g.proximaAccion?fmtFecha(parseFecha(g.proximaAccion)):'—'}</td>
+        <td style="max-width:160px;white-space:normal;font-size:.79rem">${g.notas||'—'}</td>
+        <td><span class="rdia-tl-usr">${g.usuario||'—'}</span></td>
+      </tr>`;
+    }).join('');
   }
 }
+
+/* ---- Exportar a Excel el reporte en pantalla ---- */
+$('#btnExportarReporte').addEventListener('click',()=>{
+  const todas=getGestiones();
+  const gest=todas.filter(g=>{
+    if(!g.fecha) return false;
+    const dia=g.fecha.slice(0,10);
+    return dia>=_rdiaDesde && dia<=_rdiaHasta;
+  }).sort((a,b)=>(b.timestamp||0)-(a.timestamp||0));
+
+  if(!gest.length){ alert('No hay gestiones en el período seleccionado.'); return; }
+
+  // Hoja 1: detalle
+  const detalle=gest.map(g=>{
+    let cob=g.cobrador;
+    if(!cob && g.poliza && DB && DB.length){
+      const pol=DB.find(x=>x.poliza===g.poliza);
+      if(pol) cob=pol.cobrador;
+    }
+    return [
+      g.fecha?g.fecha.slice(0,10):'',
+      horaDeTimestamp(g.timestamp),
+      g.poliza||'',
+      g.nombre||'',
+      cob||'',
+      g.tipo||'',
+      g.resultado||'',
+      g.proximaAccion?fmtFecha(parseFecha(g.proximaAccion)):'',
+      g.notas||'',
+      g.usuario||''
+    ];
+  });
+  const wsDet=XLSX.utils.aoa_to_sheet([
+    ['Fecha','Hora','Póliza','Nombre','Cobrador','Tipo','Resultado','Próxima acción','Notas','Usuario'],
+    ...detalle
+  ]);
+
+  // Hoja 2: resumen por usuario
+  const byUsr={};
+  gest.forEach(g=>{
+    const u=g.usuario||'—';
+    if(!byUsr[u]) byUsr[u]={total:0,promesas:0,seguimiento:0};
+    byUsr[u].total++;
+    if((g.resultado||'').toLowerCase().includes('promesa')) byUsr[u].promesas++;
+    if(g.proximaAccion) byUsr[u].seguimiento++;
+  });
+  const wsUsr=XLSX.utils.aoa_to_sheet([
+    ['Usuario','Gestiones','Promesas de pago','Con seguimiento'],
+    ...Object.entries(byUsr).sort((a,b)=>b[1].total-a[1].total).map(([u,v])=>[u,v.total,v.promesas,v.seguimiento])
+  ]);
+
+  // Hoja 3: resumen por tipo
+  const byTipo={};
+  gest.forEach(g=>{const t=g.tipo||'Otro'; byTipo[t]=(byTipo[t]||0)+1;});
+  const wsTipo=XLSX.utils.aoa_to_sheet([
+    ['Tipo de gestión','Cantidad'],
+    ...Object.entries(byTipo).sort((a,b)=>b[1]-a[1]).map(([t,n])=>[t,n])
+  ]);
+
+  // Hoja 4: resumen por resultado
+  const byRes={};
+  gest.forEach(g=>{const r=g.resultado||'—'; byRes[r]=(byRes[r]||0)+1;});
+  const wsRes=XLSX.utils.aoa_to_sheet([
+    ['Resultado','Cantidad'],
+    ...Object.entries(byRes).sort((a,b)=>b[1]-a[1]).map(([r,n])=>[r,n])
+  ]);
+
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,wsDet,'Detalle');
+  XLSX.utils.book_append_sheet(wb,wsUsr,'Por usuario');
+  XLSX.utils.book_append_sheet(wb,wsTipo,'Por tipo');
+  XLSX.utils.book_append_sheet(wb,wsRes,'Por resultado');
+
+  const sfx = _rdiaDesde===_rdiaHasta ? _rdiaDesde : `${_rdiaDesde}_${_rdiaHasta}`;
+  XLSX.writeFile(wb,`gestiones_${sfx}.xlsx`);
+});
 
 $('#btnReporteDia').addEventListener('click', ()=>{
   reporteDiaVisible = !reporteDiaVisible;
   const panel = $('#reporteDia');
   if(reporteDiaVisible){
     panel.classList.add('visible');
+    initRdiaControles();     // registra listeners solo la primera vez que abre
     renderReporteDia();
     panel.scrollIntoView({behavior:'smooth', block:'start'});
     $('#btnReporteDia').textContent = '📊 Ocultar Reporte';
+    // Evitar re-registrar listeners en aperturas subsecuentes
+    $('#btnReporteDia').removeEventListener('click', arguments.callee);
+    $('#btnReporteDia').addEventListener('click', ()=>{
+      reporteDiaVisible = !reporteDiaVisible;
+      if(reporteDiaVisible){
+        panel.classList.add('visible');
+        renderReporteDia();
+        panel.scrollIntoView({behavior:'smooth', block:'start'});
+        $('#btnReporteDia').textContent='📊 Ocultar Reporte';
+      }else{
+        panel.classList.remove('visible');
+        $('#btnReporteDia').textContent='📊 Reporte';
+      }
+    });
   }else{
     panel.classList.remove('visible');
-    $('#btnReporteDia').textContent = '📊 Reporte del Día';
+    $('#btnReporteDia').textContent = '📊 Reporte';
   }
 });
 
-// Re-renderizar el reporte del día cuando se agrega una gestión nueva (si está visible)
-const _addGestionRemotaOrig = addGestionRemota;
-// El refresco ya ocurre en consultarPoliza() / render(), así que basta con
-// un gancho en el evento 'click' del botón guardar (ver listener existente).
+// Re-renderizar si el reporte está visible y llega una gestión nueva
+const _origFetchGestiones = fetchGestionesRemote;
+fetchGestionesRemote = async function(){
+  await _origFetchGestiones.apply(this, arguments);
+  if(reporteDiaVisible) renderReporteDia();
+};
 
 /* arranque */
 (async ()=>{
