@@ -331,6 +331,24 @@
   }
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   #toast.err{background:var(--riesgo)}
+
+  /* ---------- Reportes de Cobranza (Admin) ---------- */
+  #repCob{display:none;margin-top:22px}
+  #repCob.visible{display:block}
+  .rc-acciones{display:flex;gap:8px;flex-wrap:wrap}
+  .rc-btn{padding:8px 14px;border:1px solid rgba(255,255,255,.45);background:transparent;color:#fff;border-radius:8px;font-size:.83rem;font-weight:600;cursor:pointer;font-family:inherit}
+  .rc-btn:hover{background:rgba(255,255,255,.12)}
+  .rc-tabs{display:flex;gap:0;background:var(--blanco);border:1px solid var(--linea);border-top:none;overflow-x:auto}
+  .rc-tab{padding:11px 16px;border:none;border-bottom:3px solid transparent;background:none;font-family:inherit;font-size:.83rem;font-weight:600;color:var(--suave);cursor:pointer;white-space:nowrap}
+  .rc-tab:hover{color:var(--tinta);background:#f8fafc}
+  .rc-tab.activo{color:var(--tinta);border-bottom-color:var(--tinta)}
+  .rc-tab:focus-visible,.rdia-chip:focus-visible,.rc-btn:focus-visible{outline:2px solid var(--atraso);outline-offset:2px}
+  .rc-sel{padding:6px 10px;border:1px solid var(--linea);border-radius:8px;font-size:.83rem;font-family:inherit;color:var(--texto);max-width:240px}
+  .rc-aviso{background:#fcefd6;color:#8a5a00;border:1px solid #e6c88a;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:.83rem}
+  .rc-num{text-align:right!important;font-variant-numeric:tabular-nums}
+  .rdia-tbl tfoot td{padding:8px 12px;font-weight:700;color:var(--tinta);background:#eef2f7;border-top:2px solid var(--tinta);white-space:nowrap}
+  .rc-vacio{color:var(--suave);font-size:.85rem;padding:16px}
+  .rc-nota{color:var(--suave);font-size:.78rem;padding:10px 14px}
 </style>
 </head>
 <body>
@@ -352,6 +370,7 @@
       <input type="file" id="fileInputRecarga" accept=".xlsx,.xls" style="display:none">
       <button class="header-btn" id="btnUsuarios" style="display:none">⚙️ Usuarios</button>
       <button class="header-btn" id="btnReporteDia" style="display:none" title="Ver resumen de gestiones del día">📊 Reporte del Día</button>
+      <button class="header-btn" id="btnRepCob" style="display:none" title="Reportes de cobranza por cobrador (imprimir, PDF, Excel)">📑 Reportes Cobranza</button>
       <button class="header-btn" id="btnLogout">Salir</button>
     </div>
   </div>
@@ -534,6 +553,55 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- ===== REPORTES DE COBRANZA (Admin) ===== -->
+    <div id="repCob">
+      <div class="rdia-header">
+        <div>
+          <h3 id="rcTitulo">📑 Reportes de Cobranza</h3>
+          <div class="rdia-fecha" id="rcSub"></div>
+        </div>
+        <div class="rc-acciones">
+          <button class="rc-btn" id="rcImprimir">🖨️ Imprimir</button>
+          <button class="rc-btn" id="rcPdf">📄 Descargar PDF</button>
+          <button class="rdia-btn-export" id="rcExcel">⬇️ Descargar Excel</button>
+        </div>
+      </div>
+      <div class="rc-tabs" role="tablist">
+        <button class="rc-tab activo" data-rc="enviada">Cobranza enviada</button>
+        <button class="rc-tab" data-rc="recibida">Cobranza recibida</button>
+        <button class="rc-tab" data-rc="efectividad">Efectividad</button>
+        <button class="rc-tab" data-rc="sinretorno">Tarjetas sin retorno</button>
+        <button class="rc-tab" data-rc="sinmov">Cuentas sin movimiento</button>
+      </div>
+      <div class="rdia-controles">
+        <div class="rdia-rango" id="rcCtlRango">
+          <div class="rdia-chips">
+            <button class="rdia-chip activo" data-rcchip="semana">Esta semana</button>
+            <button class="rdia-chip" data-rcchip="pasada">Semana pasada</button>
+            <button class="rdia-chip" data-rcchip="siete">Últimos 7 días</button>
+            <button class="rdia-chip" data-rcchip="mes">Este mes</button>
+          </div>
+          <span class="rdia-sep">|</span>
+          <label for="rcDesde">Del</label><input type="date" id="rcDesde">
+          <label for="rcHasta">al</label><input type="date" id="rcHasta">
+          <button class="rdia-btn-aplicar" id="rcAplicar">Aplicar periodo</button>
+        </div>
+        <div class="rdia-rango" id="rcCtlUmbral" style="display:none">
+          <label>Antigüedad</label>
+          <div class="rdia-chips">
+            <button class="rdia-chip activo" data-rcumbral="30">30 días o más</button>
+            <button class="rdia-chip" data-rcumbral="60">60 días o más</button>
+          </div>
+        </div>
+        <span class="rdia-sep">|</span>
+        <div class="rdia-rango">
+          <label for="rcCobrador">Cobrador</label>
+          <select id="rcCobrador" class="rc-sel"><option value="">Todos los cobradores</option></select>
+        </div>
+      </div>
+      <div class="rdia-body" id="rcCuerpo"></div>
     </div>
   </div>
   </div>
@@ -860,6 +928,7 @@ function indiceDePagos(wb){
 
   const idx={}; let total=0; const detalle={};
   const vistos=new Map();   // 'poliza|fechaISO|monto' -> cuántas veces ya se contó
+  let colCob=null;          // columna de cobrador detectada en Bd Pagos
 
   for(const nombre of hojas){
     const filas = XLSX.utils.sheet_to_json(wb.Sheets[nombre], {defval:''});
@@ -875,6 +944,9 @@ function indiceDePagos(wb){
       const f = parseFecha(r['FECHA PAGO'] ?? r['FECHA']);
       const recibo = campoPago(r, ['RECIBO','NO RECIBO','NO. RECIBO','NUMERO DE RECIBO','NÚMERO DE RECIBO','FOLIO','FOLIO RECIBO']);
       const notas  = campoPago(r, ['NOTAS','NOTA','OBSERVACIONES','OBSERVACION','OBSERVACIÓN','COMENTARIOS','COMENTARIO']);
+      // cobrador que cobró el recibo (Bd Pagos); Pagos Historicos normalmente no lo trae
+      if(!esHistorico && !colCob){ colCob = COLS_COBRADOR_PAGO.find(c=>c in r) || null; }
+      const cobPago = campoPago(r, COLS_COBRADOR_PAGO);
 
       const clave = id+'|'+(f? f.toISOString().slice(0,10) : 'sf')+'|'+monto;
       if(esHistorico && vistos.get(clave)>0){        // ya vino en Bd Pagos: mismo pago
@@ -885,14 +957,14 @@ function indiceDePagos(wb){
 
       if(!idx[id]) idx[id]={suma:0,n:0,ultimo:null,pagos:[]};
       idx[id].suma+=monto; idx[id].n++;
-      idx[id].pagos.push({recibo, fecha:f, monto, notas});
+      idx[id].pagos.push({recibo, fecha:f, monto, notas, cobrador:cobPago, origen:esHistorico?'historico':'operacion'});
       if(f && (!idx[id].ultimo || f>idx[id].ultimo)) idx[id].ultimo=f;
       total++; n++;
     }
     detalle[nombre]=n;
   }
   if(!total) return null;
-  return {idx, total, hojas, detalle};
+  return {idx, total, hojas, detalle, colCobrador:colCob};
 }
 
 // Respaldo: índice desde las columnas "Monto de Pago 01-20" de Bd Clientes
@@ -980,6 +1052,8 @@ function procesarArchivo(file, opts){
       // --- 5) Commit: aquí sí se reemplaza todo ---
       RAW_ROWS=filas;
       PAGOS_IDX=nIdx; PAGOS_TOTAL=nTotal; PAGOS_FUENTE=nFuente; PAGOS_DETALLE=nDetalle;
+      PAGOS_COL_COB = pag ? pag.colCobrador : null;
+      HIST_ENVIOS = leerHistorialEnvios(wb);
       ARCHIVO_NOMBRE=file.name; ULTIMA_CARGA=new Date();
 
       // avisos arriba del dashboard
@@ -1145,6 +1219,7 @@ function recalcular(){
   sel.value=prev||'';
   construirDashboard();
   render();
+  rcRefrescar();
 }
 
 /* ============================================================
@@ -1717,6 +1792,8 @@ function aplicarSesion(){
   $('#sessionUser').textContent = `👤 ${s.usuario} (${s.rol==='admin'?'Admin':'Usuario'})`;
   $('#btnUsuarios').style.display = s.rol==='admin' ? 'flex' : 'none';
   $('#btnReporteDia').style.display = s.rol==='admin' ? 'flex' : 'none';
+  $('#btnRepCob').style.display = s.rol==='admin' ? 'flex' : 'none';
+  if(s.rol!=='admin'){ rcVisible=false; $('#repCob').classList.remove('visible'); $('#btnRepCob').textContent='📑 Reportes Cobranza'; }
   actualizarBotonRecarga();
   $('#dropzone').classList.add('hidden');   // los datos vienen de GitHub; el dropzone es respaldo (Admin) ante fallo
   cargarDatosRemotos();                      // todos jalan la misma fuente al entrar
@@ -2458,6 +2535,415 @@ function generarEstadoCuentaReporte(poliza){
     }catch(e){ toast('Error al generar el estado de cuenta: '+e.message, true); }
   });
 }
+
+/* ============================================================
+   REPORTES DE COBRANZA (solo Admin) — módulo autocontenido
+   Enviada · Recibida · Tarjetas sin retorno · Sin movimiento · Efectividad
+   Salidas: pantalla, Imprimir, PDF y Excel.
+   Lee DB (registros ya calculados) y los pagos de cada póliza.
+   Si el libro trae la hoja "Historial Envios" (bitácora del script de
+   Python), Enviada y Efectividad la usan en lugar de "Envío Tarjeta 01".
+   ============================================================ */
+var PAGOS_COL_COB = null;   // nombre de la columna de cobrador encontrada en Bd Pagos
+var HIST_ENVIOS   = null;   // [{poliza, cobrador, fecha}] desde la hoja "Historial Envios"
+var COLS_COBRADOR_PAGO = ['COBRADOR','COBRO','COBRADO POR','COBRÓ','COBRO POR','QUIEN COBRO','QUIÉN COBRÓ',
+  'RECIBIO','RECIBIÓ','RECIBIDO POR','COBRADOR PAGO','COBRADOR DEL PAGO'];
+const RC_MAX_PANTALLA = 500;
+
+var rcVisible=false, rcTipo='enviada', rcDesde=null, rcHasta=null, rcUmbral=30, rcChip='semana', rcInit=false;
+
+const RC_DEFS = {
+  enviada:    {titulo:'Cobranza enviada',            rango:true},
+  recibida:   {titulo:'Cobranza recibida',           rango:true},
+  efectividad:{titulo:'Efectividad por cobrador',    rango:true},
+  sinretorno: {titulo:'Tarjetas sin retorno',        rango:false},
+  sinmov:     {titulo:'Cuentas sin movimiento',      rango:false}
+};
+
+/* ---------- utilidades de fecha ---------- */
+// Día calendario local. SheetJS a veces entrega 23:59:xx del día anterior; se redondea.
+function rcDia(v){
+  const d = (v instanceof Date) ? v : parseFecha(v);
+  if(!d || isNaN(d)) return null;
+  let x = new Date(d.getTime());
+  if(x.getHours()===23 && x.getMinutes()>=55) x = new Date(x.getTime()+10*60000);
+  return new Date(x.getFullYear(), x.getMonth(), x.getDate());
+}
+function rcDias(a,b){ return Math.round((rcDia(b)-rcDia(a))/86400000); }
+function rcIso(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function rcDeIso(s){ if(!s) return null; const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); }
+function rcEnRango(d){ return d && d>=rcDesde && d<=rcHasta; }
+function rcEsc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function rcPct(n){ return (n==null||isNaN(n)) ? '—' : (Math.round(n*1000)/10).toLocaleString('es-MX')+'%'; }
+
+function rcRangoChip(chip){
+  const hoy = rcDia(getHoy());
+  const lunes = d => { const x=new Date(d); const w=(x.getDay()+6)%7; x.setDate(x.getDate()-w); return x; };
+  if(chip==='semana'){ const l=lunes(hoy); const f=new Date(l); f.setDate(l.getDate()+6); return [l,f]; }
+  if(chip==='pasada'){ const l=lunes(hoy); l.setDate(l.getDate()-7); const f=new Date(l); f.setDate(l.getDate()+6); return [l,f]; }
+  if(chip==='siete'){ const i=new Date(hoy); i.setDate(hoy.getDate()-6); return [i,hoy]; }
+  if(chip==='mes'){ return [new Date(hoy.getFullYear(),hoy.getMonth(),1), new Date(hoy.getFullYear(),hoy.getMonth()+1,0)]; }
+  return [rcDesde||hoy, rcHasta||hoy];
+}
+function rcAplicarChip(chip){
+  rcChip=chip;
+  [rcDesde,rcHasta]=rcRangoChip(chip);
+  $('#rcDesde').value=rcIso(rcDesde); $('#rcHasta').value=rcIso(rcHasta);
+  document.querySelectorAll('#repCob [data-rcchip]').forEach(b=>b.classList.toggle('activo', b.dataset.rcchip===chip));
+}
+
+/* ---------- lectura de la bitácora de envíos (si existe en el libro) ---------- */
+function leerHistorialEnvios(wb){
+  const norm = n => String(n).toLowerCase().normalize('NFD').replace(/[^a-z]/g,'');
+  const hoja = wb.SheetNames.find(n=>norm(n).includes('historialenvio'));
+  if(!hoja) return null;
+  const filas = XLSX.utils.sheet_to_json(wb.Sheets[hoja],{defval:''});
+  const out=[];
+  for(const row of filas){
+    const r={}; for(const k in row) r[String(k).trim().toUpperCase()]=row[k];
+    const poliza=String(r['IDPOLIZA']||r['POLIZA']||r['PÓLIZA']||'').trim();
+    const fecha=rcDia(r['FECHA ENVIO']??r['FECHA ENVÍO']??r['ENVIO TARJETA 01']??r['ENVÍO TARJETA 01']??r['FECHA']);
+    if(!poliza||!fecha) continue;
+    out.push({poliza, cobrador:String(r['COBRADOR']||'').trim(), fecha});
+  }
+  return out;
+}
+
+/* ---------- fuente de "enviadas" (historial si existe; si no, el campo actual) ---------- */
+function rcEnviadas(){
+  const porPol = new Map(DB.map(r=>[String(r.poliza).toUpperCase(), r]));
+  const out=[];
+  if(HIST_ENVIOS && HIST_ENVIOS.length){
+    for(const h of HIST_ENVIOS){
+      if(!rcEnRango(h.fecha)) continue;
+      const r=porPol.get(String(h.poliza).toUpperCase());
+      if(!r) continue;
+      out.push({r, envio:h.fecha, cobrador:h.cobrador||r.cobrador});
+    }
+  }else{
+    for(const r of DB){
+      const e=rcDia(r.envioTarjeta);
+      if(rcEnRango(e)) out.push({r, envio:e, cobrador:r.cobrador});
+    }
+  }
+  return out;
+}
+
+/* ---------- construcción de cada reporte ---------- */
+// Cada reporte devuelve: {kpis, avisos, resumen:{cols,filas,total}, detalle:{cols,filas}}
+// cols: [{h, k, t}] con t = 'txt' | 'num' | 'money' | 'fecha' | 'pct'
+function rcAgrupar(filas, campos){
+  const m=new Map();
+  for(const f of filas){
+    if(!m.has(f.cobrador)){ const o={cobrador:f.cobrador}; campos.forEach(c=>o[c]=0); m.set(f.cobrador,o); }
+    const o=m.get(f.cobrador);
+    campos.forEach(c=>{ o[c]+= (typeof f['_'+c]==='number') ? f['_'+c] : 0; });
+  }
+  return [...m.values()].sort((a,b)=>a.cobrador.localeCompare(b.cobrador,'es'));
+}
+function rcTotal(filas, campos){ const t={cobrador:'TOTAL'}; campos.forEach(c=>t[c]=filas.reduce((s,f)=>s+(f[c]||0),0)); return t; }
+
+function rcConstruir(){
+  const cobSel=$('#rcCobrador').value;
+  const pasaCob = c => !cobSel || c===cobSel;
+  const hoy=rcDia(getHoy());
+  const avisos=[];
+  const sinHist = !(HIST_ENVIOS && HIST_ENVIOS.length);
+
+  if(rcTipo==='enviada'){
+    if(sinHist) avisos.push('En Access "Envío Tarjeta 01" se sobrescribe en cada envío: este reporte solo ve el <b>último envío</b> de cada póliza. Periodos anteriores pueden salir incompletos hasta que exista la bitácora de envíos.');
+    const det=rcEnviadas().filter(x=>pasaCob(x.cobrador)).map(({r,envio,cobrador})=>({
+      cobrador, poliza:r.poliza, nombre:r.nombre, telefono:r.telefono, envio,
+      mensual:r.mensual, saldoVencido:r.saldoVencido, estatus:r.estatus,
+      _tarjetas:1, _mensual:r.mensual||0, _vencido:r.saldoVencido||0
+    })).sort((a,b)=>a.cobrador.localeCompare(b.cobrador,'es')||a.envio-b.envio);
+    const res=rcAgrupar(det,['tarjetas','mensual','vencido']);
+    const tot=rcTotal(res,['tarjetas','mensual','vencido']);
+    return {avisos,
+      kpis:[[tot.tarjetas.toLocaleString('es-MX'),'Tarjetas enviadas'],[fmtMoney(tot.mensual),'Suma de mensualidades'],[fmtMoney(tot.vencido),'Saldo vencido de esas pólizas'],[res.length,'Cobradores']],
+      resumen:{cols:[{h:'Cobrador',k:'cobrador',t:'txt'},{h:'Tarjetas',k:'tarjetas',t:'num'},{h:'Suma mensualidades',k:'mensual',t:'money'},{h:'Saldo vencido',k:'vencido',t:'money'}],filas:res,total:tot},
+      detalle:{cols:[{h:'Cobrador',k:'cobrador',t:'txt'},{h:'Póliza',k:'poliza',t:'txt'},{h:'Nombre',k:'nombre',t:'txt'},{h:'Teléfono',k:'telefono',t:'txt'},{h:'Envío',k:'envio',t:'fecha'},{h:'Mensualidad',k:'mensual',t:'money'},{h:'Saldo vencido',k:'saldoVencido',t:'money'},{h:'Estatus',k:'estatus',t:'txt'}],filas:det}};
+  }
+
+  if(rcTipo==='recibida'){
+    if(!PAGOS_COL_COB) avisos.push('No se encontró en <i>Bd Pagos</i> una columna de cobrador reconocida. Todos los pagos se asignaron al <b>cobrador de la póliza</b>.');
+    let porPoliza=0;
+    const det=[];
+    for(const r of DB){
+      for(const p of (r.pagos||[])){
+        const f=rcDia(p.fecha);
+        if(!rcEnRango(f)) continue;
+        const cobrador = p.cobrador || r.cobrador;
+        if(!pasaCob(cobrador)) continue;
+        if(!p.cobrador) porPoliza++;
+        det.push({fecha:f, recibo:p.recibo, poliza:r.poliza, nombre:r.nombre, cobrador:cobrador+(p.cobrador?'':' *'),
+          monto:p.monto, notas:p.notas, _recibos:1, _monto:p.monto||0, _grupo:cobrador});
+      }
+    }
+    det.forEach(d=>{ d._cobReal=d.cobrador; d.cobrador=d._grupo; });
+    if(porPoliza && PAGOS_COL_COB) avisos.push(`${porPoliza.toLocaleString('es-MX')} pago(s) no traen cobrador (vienen de Pagos Históricos o sin captura); se asignaron al cobrador de la póliza y se marcan con * en el detalle.`);
+    det.sort((a,b)=>a.cobrador.localeCompare(b.cobrador,'es')||a.fecha-b.fecha);
+    const res=rcAgrupar(det,['recibos','monto']);
+    const tot=rcTotal(res,['recibos','monto']);
+    det.forEach(d=>{ d.cobrador=d._cobReal; });
+    return {avisos,
+      kpis:[[tot.recibos.toLocaleString('es-MX'),'Recibos'],[fmtMoney(tot.monto),'Monto cobrado'],[res.length,'Cobradores'],[tot.recibos?fmtMoney(tot.monto/tot.recibos):'—','Promedio por recibo']],
+      resumen:{cols:[{h:'Cobrador',k:'cobrador',t:'txt'},{h:'Recibos',k:'recibos',t:'num'},{h:'Monto cobrado',k:'monto',t:'money'}],filas:res,total:tot},
+      detalle:{cols:[{h:'Fecha pago',k:'fecha',t:'fecha'},{h:'Recibo',k:'recibo',t:'txt'},{h:'Póliza',k:'poliza',t:'txt'},{h:'Nombre',k:'nombre',t:'txt'},{h:'Cobró',k:'cobrador',t:'txt'},{h:'Monto',k:'monto',t:'money'},{h:'Notas',k:'notas',t:'txt'}],filas:det}};
+  }
+
+  if(rcTipo==='efectividad'){
+    if(sinHist) avisos.push('Mientras no exista la bitácora de envíos, las tarjetas enviadas se toman del <b>último envío</b> registrado en Access.');
+    const det=rcEnviadas().filter(x=>pasaCob(x.cobrador)).map(({r,envio,cobrador})=>{
+      const pagos=(r.pagos||[]).map(p=>({f:rcDia(p.fecha),m:p.monto||0})).filter(p=>p.f && p.f>=envio && p.f<=rcHasta).sort((a,b)=>a.f-b.f);
+      const monto=pagos.reduce((s,p)=>s+p.m,0);
+      return {cobrador, poliza:r.poliza, nombre:r.nombre, envio, cobrada:pagos.length?'Sí':'No',
+        primerPago:pagos.length?pagos[0].f:null, montoPagado:monto,
+        _enviadas:1, _cobradas:pagos.length?1:0, _monto:monto};
+    }).sort((a,b)=>a.cobrador.localeCompare(b.cobrador,'es')||a.envio-b.envio);
+    const res=rcAgrupar(det,['enviadas','cobradas','monto']);
+    res.forEach(o=>o.pct=o.enviadas?o.cobradas/o.enviadas:null);
+    const tot=rcTotal(res,['enviadas','cobradas','monto']); tot.pct=tot.enviadas?tot.cobradas/tot.enviadas:null;
+    return {avisos,
+      kpis:[[tot.enviadas.toLocaleString('es-MX'),'Tarjetas enviadas'],[tot.cobradas.toLocaleString('es-MX'),'Tarjetas cobradas'],[rcPct(tot.pct),'Efectividad'],[fmtMoney(tot.monto),'Cobrado de esas tarjetas']],
+      resumen:{cols:[{h:'Cobrador',k:'cobrador',t:'txt'},{h:'Enviadas',k:'enviadas',t:'num'},{h:'Cobradas',k:'cobradas',t:'num'},{h:'Efectividad',k:'pct',t:'pct'},{h:'Monto cobrado',k:'monto',t:'money'}],filas:res,total:tot},
+      detalle:{cols:[{h:'Cobrador',k:'cobrador',t:'txt'},{h:'Póliza',k:'poliza',t:'txt'},{h:'Nombre',k:'nombre',t:'txt'},{h:'Envío',k:'envio',t:'fecha'},{h:'¿Cobrada?',k:'cobrada',t:'txt'},{h:'Primer pago',k:'primerPago',t:'fecha'},{h:'Monto pagado',k:'montoPagado',t:'money'}],filas:det}};
+  }
+
+  if(rcTipo==='sinretorno'){
+    const det=[];
+    for(const r of DB){
+      if(!pasaCob(r.cobrador)) continue;
+      const env=rcDia(r.envioTarjeta); if(!env) continue;
+      const ret=rcDia(r.retornoTarjeta);
+      if(ret && ret>=env) continue;                 // ya regresó después del último envío
+      const dias=rcDias(env,hoy);
+      if(dias<rcUmbral) continue;
+      det.push({cobrador:r.cobrador, poliza:r.poliza, nombre:r.nombre, telefono:r.telefono, envio:env, dias,
+        retorno:ret, saldoVencido:r.saldoVencido, estatus:r.estatus,
+        _r30:dias<60?1:0, _r60:dias>=60?1:0, _total:1, _vencido:r.saldoVencido||0});
+    }
+    det.sort((a,b)=>a.cobrador.localeCompare(b.cobrador,'es')||b.dias-a.dias);
+    const res=rcAgrupar(det,['r30','r60','total','vencido']);
+    const tot=rcTotal(res,['r30','r60','total','vencido']);
+    return {avisos,
+      kpis:[[tot.total.toLocaleString('es-MX'),`Tarjetas con ${rcUmbral}+ días fuera`],[tot.r30.toLocaleString('es-MX'),'De 30 a 59 días'],[tot.r60.toLocaleString('es-MX'),'60 días o más'],[fmtMoney(tot.vencido),'Saldo vencido']],
+      resumen:{cols:[{h:'Cobrador',k:'cobrador',t:'txt'},{h:'30 a 59 días',k:'r30',t:'num'},{h:'60 días o más',k:'r60',t:'num'},{h:'Total',k:'total',t:'num'},{h:'Saldo vencido',k:'vencido',t:'money'}],filas:res,total:tot},
+      detalle:{cols:[{h:'Cobrador',k:'cobrador',t:'txt'},{h:'Póliza',k:'poliza',t:'txt'},{h:'Nombre',k:'nombre',t:'txt'},{h:'Teléfono',k:'telefono',t:'txt'},{h:'Envío',k:'envio',t:'fecha'},{h:'Días fuera',k:'dias',t:'num'},{h:'Último retorno',k:'retorno',t:'fecha'},{h:'Saldo vencido',k:'saldoVencido',t:'money'},{h:'Estatus',k:'estatus',t:'txt'}],filas:det}};
+  }
+
+  if(rcTipo==='sinmov'){
+    const det=[];
+    for(const r of DB){
+      if(!pasaCob(r.cobrador)) continue;
+      if(r.vigenciaActiva===false) continue;
+      if(r.estatus==='CANCELADA MANUALMENTE' || !(r.saldoTotal>0.5)) continue;
+      const ref=rcDia(r.ultimoPago || r.inicio); if(!ref) continue;
+      const dias=rcDias(ref,hoy);
+      if(dias<rcUmbral) continue;
+      det.push({cobrador:r.cobrador, poliza:r.poliza, nombre:r.nombre, telefono:r.telefono,
+        ultimo:r.ultimoPago?rcDia(r.ultimoPago):null, dias, meses:r.mesesAtraso, saldoVencido:r.saldoVencido, estatus:r.estatus,
+        _r30:dias<60?1:0, _r60:dias>=60?1:0, _total:1, _vencido:r.saldoVencido||0});
+    }
+    det.sort((a,b)=>a.cobrador.localeCompare(b.cobrador,'es')||b.dias-a.dias);
+    const res=rcAgrupar(det,['r30','r60','total','vencido']);
+    const tot=rcTotal(res,['r30','r60','total','vencido']);
+    avisos.push('Incluye solo pólizas con vigencia activa y saldo pendiente. Si la póliza nunca ha pagado, los días se cuentan desde el inicio de vigencia.');
+    return {avisos,
+      kpis:[[tot.total.toLocaleString('es-MX'),`Cuentas con ${rcUmbral}+ días sin pago`],[tot.r30.toLocaleString('es-MX'),'De 30 a 59 días'],[tot.r60.toLocaleString('es-MX'),'60 días o más'],[fmtMoney(tot.vencido),'Saldo vencido']],
+      resumen:{cols:[{h:'Cobrador',k:'cobrador',t:'txt'},{h:'30 a 59 días',k:'r30',t:'num'},{h:'60 días o más',k:'r60',t:'num'},{h:'Total',k:'total',t:'num'},{h:'Saldo vencido',k:'vencido',t:'money'}],filas:res,total:tot},
+      detalle:{cols:[{h:'Cobrador',k:'cobrador',t:'txt'},{h:'Póliza',k:'poliza',t:'txt'},{h:'Nombre',k:'nombre',t:'txt'},{h:'Teléfono',k:'telefono',t:'txt'},{h:'Último pago',k:'ultimo',t:'fecha'},{h:'Días sin pago',k:'dias',t:'num'},{h:'Meses atraso',k:'meses',t:'num'},{h:'Saldo vencido',k:'saldoVencido',t:'money'},{h:'Estatus',k:'estatus',t:'txt'}],filas:det}};
+  }
+}
+
+/* ---------- formato de celdas ---------- */
+function rcFmt(v,t){
+  if(t==='money') return fmtMoney(v||0);
+  if(t==='num') return (v==null?'—':Number(v).toLocaleString('es-MX'));
+  if(t==='fecha') return v?fmtFecha(v):'—';
+  if(t==='pct') return rcPct(v);
+  return (v==null||v==='')?'—':String(v);
+}
+function rcSubtitulo(){
+  const d=RC_DEFS[rcTipo];
+  const cob=$('#rcCobrador').value||'Todos los cobradores';
+  const per = d.rango ? `Del ${fmtFecha(rcDesde)} al ${fmtFecha(rcHasta)}` : `${rcUmbral} días o más al ${fmtFecha(rcDia(getHoy()))}`;
+  return `${per} · ${cob}`;
+}
+
+/* ---------- pantalla ---------- */
+var RC_ULTIMO=null;
+function rcRender(){
+  if(!rcVisible) return;
+  if(!DB || !DB.length){ $('#rcCuerpo').innerHTML='<p class="rc-vacio">Los reportes aparecen en cuanto terminen de cargar los datos.</p>'; return; }
+  const def=RC_DEFS[rcTipo];
+  document.querySelectorAll('#repCob [data-rc]').forEach(b=>b.classList.toggle('activo', b.dataset.rc===rcTipo));
+  $('#rcCtlRango').style.display = def.rango ? '' : 'none';
+  $('#rcCtlUmbral').style.display = def.rango ? 'none' : '';
+  $('#rcTitulo').textContent = '📑 '+def.titulo;
+  $('#rcSub').textContent = rcSubtitulo();
+
+  const R = rcConstruir(); RC_ULTIMO = R;
+  const th = c => `<th class="${c.t==='txt'?'':'rc-num'}">${rcEsc(c.h)}</th>`;
+  const td = (f,c) => `<td class="${c.t==='txt'?'':'rc-num'}">${rcEsc(rcFmt(f[c.k],c.t))}</td>`;
+
+  const avisos = R.avisos.map(a=>`<div class="rc-aviso">${a}</div>`).join('');
+  const kpis = `<div class="rdia-kpis">${R.kpis.map(k=>`<div class="rdia-kpi"><div class="rk-n" style="font-size:1.5rem;color:var(--tinta)">${rcEsc(k[0])}</div><div class="rk-l">${rcEsc(k[1])}</div></div>`).join('')}</div>`;
+
+  const rs=R.resumen;
+  const resumen = rs.filas.length
+    ? `<table class="rdia-tbl"><thead><tr>${rs.cols.map(th).join('')}</tr></thead><tbody>${rs.filas.map(f=>`<tr>${rs.cols.map(c=>td(f,c)).join('')}</tr>`).join('')}</tbody>
+       <tfoot><tr class="rc-total">${rs.cols.map(c=>td(rs.total,c)).join('')}</tr></tfoot></table>`
+    : '<p class="rc-vacio">No hay registros con estos filtros. Prueba otro periodo o cobrador.</p>';
+
+  const dt=R.detalle; const visibles=dt.filas.slice(0,RC_MAX_PANTALLA);
+  const detalle = dt.filas.length
+    ? `<table class="rdia-tbl"><thead><tr>${dt.cols.map(th).join('')}</tr></thead><tbody>${visibles.map(f=>`<tr>${dt.cols.map(c=>td(f,c)).join('')}</tr>`).join('')}</tbody></table>`
+      + (dt.filas.length>RC_MAX_PANTALLA ? `<p class="rc-nota">Se muestran ${RC_MAX_PANTALLA.toLocaleString('es-MX')} de ${dt.filas.length.toLocaleString('es-MX')} renglones. Imprimir, PDF y Excel incluyen todos.</p>` : '')
+    : '';
+
+  $('#rcCuerpo').innerHTML = avisos + kpis +
+    `<div class="rdia-bloque" style="margin-bottom:16px"><div class="rdia-bloque-head">Resumen por cobrador</div><div class="rdia-tbl-wrap">${resumen}</div></div>` +
+    (dt.filas.length ? `<div class="rdia-bloque"><div class="rdia-bloque-head">Detalle (${dt.filas.length.toLocaleString('es-MX')})</div><div class="rdia-tbl-wrap">${detalle}</div></div>` : '');
+}
+function rcRefrescar(){
+  if(!rcInit || !DB) return;
+  const sel=$('#rcCobrador'); const prev=sel.value;
+  const cobs=new Set(DB.map(r=>r.cobrador));
+  DB.forEach(r=>(r.pagos||[]).forEach(p=>{ if(p.cobrador) cobs.add(p.cobrador); }));
+  (HIST_ENVIOS||[]).forEach(h=>{ if(h.cobrador) cobs.add(h.cobrador); });
+  sel.innerHTML='<option value="">Todos los cobradores</option>'+[...cobs].sort((a,b)=>a.localeCompare(b,'es')).map(c=>`<option>${rcEsc(c)}</option>`).join('');
+  sel.value = [...cobs].includes(prev) ? prev : '';
+  if(rcChip!=='manual') rcAplicarChip(rcChip);   // la fecha de corte pudo cambiar
+  rcRender();
+}
+
+/* ---------- exportaciones ---------- */
+function rcNombreArchivo(ext){
+  const cob=$('#rcCobrador').value ? '_'+$('#rcCobrador').value.replace(/[^\wÁÉÍÓÚÑáéíóúñ]+/g,'_') : '';
+  const per = RC_DEFS[rcTipo].rango ? `${rcIso(rcDesde)}_${rcIso(rcHasta)}` : `${rcUmbral}dias_${rcIso(rcDia(getHoy()))}`;
+  return `cobranza_${rcTipo}${cob}_${per}.${ext}`;
+}
+function rcValorExcel(v,t){
+  if(t==='money'||t==='num') return (v==null||isNaN(v))?'':Number(v);
+  if(t==='pct') return (v==null||isNaN(v))?'':Math.round(v*1000)/1000;
+  if(t==='fecha') return v?v:'';
+  return v==null?'':String(v);
+}
+function rcExcel(){
+  const R=rcConstruir(); if(!R) return;
+  const cab=[[RC_DEFS[rcTipo].titulo],[rcSubtitulo()],[]];
+  const avisosTxt=R.avisos.map(a=>[a.replace(/<[^>]+>/g,'')]);
+  const rs=R.resumen, dt=R.detalle;
+  const hojaRes=[...cab,...avisosTxt,...(avisosTxt.length?[[]]:[]),rs.cols.map(c=>c.h),
+    ...rs.filas.map(f=>rs.cols.map(c=>rcValorExcel(f[c.k],c.t))), rs.cols.map(c=>rcValorExcel(rs.total[c.k],c.t))];
+  const hojaDet=[...cab,dt.cols.map(c=>c.h),...dt.filas.map(f=>dt.cols.map(c=>rcValorExcel(f[c.k],c.t)))];
+  const wb=XLSX.utils.book_new();
+  const w1=XLSX.utils.aoa_to_sheet(hojaRes,{dateNF:'dd/mm/yyyy'});
+  const w2=XLSX.utils.aoa_to_sheet(hojaDet,{dateNF:'dd/mm/yyyy'});
+  w1['!cols']=rs.cols.map(c=>({wch:c.t==='txt'?28:16}));
+  w2['!cols']=dt.cols.map(c=>({wch:c.k==='nombre'?34:(c.t==='txt'?18:14)}));
+  XLSX.utils.book_append_sheet(wb,w1,'Resumen');
+  XLSX.utils.book_append_sheet(wb,w2,'Detalle');
+  XLSX.writeFile(wb, rcNombreArchivo('xlsx'));
+}
+function rcTablaHTML(sec, conTotal){
+  const al = c => c.t==='txt' ? '' : ' style="text-align:right"';
+  return `<table><thead><tr>${sec.cols.map(c=>`<th${al(c)}>${rcEsc(c.h)}</th>`).join('')}</tr></thead><tbody>`+
+    sec.filas.map(f=>`<tr>${sec.cols.map(c=>`<td${al(c)}>${rcEsc(rcFmt(f[c.k],c.t))}</td>`).join('')}</tr>`).join('')+
+    `</tbody>${conTotal?`<tfoot><tr>${sec.cols.map(c=>`<td${al(c)}>${rcEsc(rcFmt(sec.total[c.k],c.t))}</td>`).join('')}</tr></tfoot>`:''}</table>`;
+}
+function rcImprimir(){
+  const R=rcConstruir(); if(!R) return;
+  const w=window.open('','_blank');
+  if(!w){ toast('El navegador bloqueó la ventana de impresión. Permite ventanas emergentes para este sitio.', true); return; }
+  const avisos=R.avisos.map(a=>`<p class="av">${a}</p>`).join('');
+  w.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>${rcEsc(RC_DEFS[rcTipo].titulo)}</title>
+  <style>
+    @page{size:letter landscape;margin:12mm}
+    body{font-family:'Segoe UI',Arial,sans-serif;color:#1a2531;font-size:10px}
+    h1{font-size:15px;margin:0 0 2px;color:#0f2740} .sub{color:#5b6b7d;margin-bottom:8px}
+    h2{font-size:12px;margin:14px 0 4px;color:#0f2740}
+    table{width:100%;border-collapse:collapse} th{background:#0f2740;color:#fff;text-align:left;padding:4px 6px;font-size:9px}
+    td{padding:3px 6px;border-bottom:1px solid #dce1e8} tfoot td{font-weight:700;border-top:2px solid #0f2740;background:#eef2f7}
+    thead{display:table-header-group} tr{page-break-inside:avoid}
+    .av{background:#fcefd6;border:1px solid #e6c88a;padding:5px 8px;border-radius:4px;margin:4px 0}
+    .pie{margin-top:10px;color:#5b6b7d;font-size:8px}
+  </style></head><body>
+  <h1>Arts Nova MutuClub · ${rcEsc(RC_DEFS[rcTipo].titulo)}</h1>
+  <div class="sub">${rcEsc(rcSubtitulo())}</div>${avisos}
+  <h2>Resumen por cobrador</h2>${rcTablaHTML(R.resumen,true)}
+  ${R.detalle.filas.length?`<h2>Detalle (${R.detalle.filas.length.toLocaleString('es-MX')})</h2>${rcTablaHTML(R.detalle,false)}`:''}
+  <div class="pie">Generado el ${fmtFecha(new Date())} · Fuente: ${rcEsc(ARCHIVO_NOMBRE||'MUTUAL_2026.xlsx')}</div>
+  <script>window.onload=()=>{window.focus();window.print();}<\/script></body></html>`);
+  w.document.close();
+}
+function rcPDF(){
+  const R=rcConstruir(); if(!R) return;
+  ecLoadLibs(()=>{
+    const {jsPDF}=window.jspdf;
+    const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'letter'});
+    const W=doc.internal.pageSize.getWidth();
+    doc.setFillColor(15,39,64); doc.rect(0,0,W,18,'F');
+    doc.setTextColor(255); doc.setFontSize(13); doc.text('Arts Nova MutuClub · '+RC_DEFS[rcTipo].titulo,12,11.5);
+    doc.setTextColor(26,37,49); doc.setFontSize(9); doc.text(rcSubtitulo(),12,25);
+    let y=30;
+    R.avisos.forEach(a=>{ const t=doc.splitTextToSize('Nota: '+a.replace(/<[^>]+>/g,''),W-24); doc.setTextColor(138,90,0); doc.text(t,12,y); y+=t.length*4+1; });
+    doc.setTextColor(26,37,49);
+    const cuerpo = sec => sec.filas.map(f=>sec.cols.map(c=>rcFmt(f[c.k],c.t)));
+    const estilos = sec => { const o={}; sec.cols.forEach((c,i)=>{ if(c.t!=='txt') o[i]={halign:'right'}; }); return o; };
+    const rs=R.resumen;
+    doc.autoTable({startY:y+2, head:[rs.cols.map(c=>c.h)], body:cuerpo(rs), foot:[rs.cols.map(c=>rcFmt(rs.total[c.k],c.t))],
+      styles:{fontSize:8,cellPadding:1.6}, headStyles:{fillColor:[15,39,64]}, footStyles:{fillColor:[238,242,247],textColor:[15,39,64],fontStyle:'bold'},
+      columnStyles:estilos(rs), margin:{left:12,right:12}});
+    const dt=R.detalle;
+    if(dt.filas.length){
+      doc.autoTable({startY:doc.lastAutoTable.finalY+8, head:[dt.cols.map(c=>c.h)], body:cuerpo(dt),
+        styles:{fontSize:7.5,cellPadding:1.4}, headStyles:{fillColor:[15,39,64]}, columnStyles:estilos(dt), margin:{left:12,right:12}});
+    }
+    const n=doc.internal.getNumberOfPages(), H=doc.internal.pageSize.getHeight();
+    for(let i=1;i<=n;i++){ doc.setPage(i); doc.setFontSize(7); doc.setTextColor(91,107,125);
+      doc.text(`Generado el ${fmtFecha(new Date())} · Página ${i} de ${n}`, W-12, H-6, {align:'right'}); }
+    doc.save(rcNombreArchivo('pdf'));
+  });
+}
+
+/* ---------- controles ---------- */
+function rcInicializar(){
+  if(rcInit) return; rcInit=true;
+  document.querySelectorAll('#repCob [data-rc]').forEach(b=>b.addEventListener('click',()=>{ rcTipo=b.dataset.rc; rcRender(); }));
+  document.querySelectorAll('#repCob [data-rcchip]').forEach(b=>b.addEventListener('click',()=>{ rcAplicarChip(b.dataset.rcchip); rcRender(); }));
+  document.querySelectorAll('#repCob [data-rcumbral]').forEach(b=>b.addEventListener('click',()=>{
+    rcUmbral=+b.dataset.rcumbral;
+    document.querySelectorAll('#repCob [data-rcumbral]').forEach(x=>x.classList.toggle('activo',x===b));
+    rcRender();
+  }));
+  $('#rcAplicar').addEventListener('click',()=>{
+    const d=rcDeIso($('#rcDesde').value), h=rcDeIso($('#rcHasta').value);
+    if(!d||!h){ toast('Elige las dos fechas del periodo.', true); return; }
+    if(d>h){ toast('La fecha "Del" debe ser anterior o igual a la fecha "Al".', true); return; }
+    rcDesde=d; rcHasta=h; rcChip='manual';
+    document.querySelectorAll('#repCob [data-rcchip]').forEach(b=>b.classList.remove('activo'));
+    rcRender();
+  });
+  $('#rcCobrador').addEventListener('change',rcRender);
+  $('#rcImprimir').addEventListener('click',rcImprimir);
+  $('#rcPdf').addEventListener('click',rcPDF);
+  $('#rcExcel').addEventListener('click',rcExcel);
+  rcAplicarChip('semana');
+  rcRefrescar();
+}
+$('#btnRepCob').addEventListener('click',()=>{
+  rcVisible=!rcVisible;
+  const panel=$('#repCob');
+  panel.classList.toggle('visible',rcVisible);
+  $('#btnRepCob').textContent = rcVisible ? '📑 Ocultar Reportes' : '📑 Reportes Cobranza';
+  if(rcVisible){
+    if(!rcInit) rcInicializar(); else rcRender();
+    panel.scrollIntoView({behavior:'smooth',block:'start'});
+  }
+});
+
 </script>
 </body>
 </html>
