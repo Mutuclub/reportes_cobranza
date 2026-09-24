@@ -945,8 +945,9 @@ function indiceDePagos(wb){
       const recibo = campoPago(r, ['RECIBO','NO RECIBO','NO. RECIBO','NUMERO DE RECIBO','NÚMERO DE RECIBO','FOLIO','FOLIO RECIBO']);
       const notas  = campoPago(r, ['NOTAS','NOTA','OBSERVACIONES','OBSERVACION','OBSERVACIÓN','COMENTARIOS','COMENTARIO']);
       // cobrador que cobró el recibo (Bd Pagos); Pagos Historicos normalmente no lo trae
-      if(!esHistorico && !colCob){ colCob = COLS_COBRADOR_PAGO.find(c=>c in r) || null; }
-      const cobPago = campoPago(r, COLS_COBRADOR_PAGO);
+      const colsCob = esHistorico ? COLS_COBRADOR_PAGO : COLS_COBRADOR_BD_PAGOS;
+      if(!esHistorico && !colCob){ colCob = colsCob.find(c=>c in r) || null; }
+      const cobPago = campoPago(r, colsCob);
 
       const clave = id+'|'+(f? f.toISOString().slice(0,10) : 'sf')+'|'+monto;
       if(esHistorico && vistos.get(clave)>0){        // ya vino en Bd Pagos: mismo pago
@@ -2548,7 +2549,11 @@ var PAGOS_COL_COB = null;   // nombre de la columna de cobrador encontrada en Bd
 var HIST_ENVIOS   = null;   // [{poliza, cobrador, fecha}] desde la hoja "Historial Envios"
 var COLS_COBRADOR_PAGO = ['COBRADOR','COBRO','COBRADO POR','COBRÓ','COBRO POR','QUIEN COBRO','QUIÉN COBRÓ',
   'RECIBIO','RECIBIÓ','RECIBIDO POR','COBRADOR PAGO','COBRADOR DEL PAGO'];
+// En Bd Pagos el nombre del cobrador se captura en el campo NOTAS (confirmado por Ricardo, sep-2026)
+var COLS_COBRADOR_BD_PAGOS = ['NOTAS','NOTA DE PAGO','NOTA'].concat(COLS_COBRADOR_PAGO);
 const RC_MAX_PANTALLA = 500;
+// Normaliza nombres de cobrador para agrupar igual "Juan  Pérez" y "JUAN PÉREZ"
+function rcNormCob(c){ const t=String(c==null?'':c).trim().replace(/\s+/g,' ').toUpperCase(); return t || '(SIN COBRADOR)'; }
 
 var rcVisible=false, rcTipo='enviada', rcDesde=null, rcHasta=null, rcUmbral=30, rcChip='semana', rcInit=false;
 
@@ -2618,12 +2623,12 @@ function rcEnviadas(){
       if(!rcEnRango(h.fecha)) continue;
       const r=porPol.get(String(h.poliza).toUpperCase());
       if(!r) continue;
-      out.push({r, envio:h.fecha, cobrador:h.cobrador||r.cobrador});
+      out.push({r, envio:h.fecha, cobrador:rcNormCob(h.cobrador||r.cobrador)});
     }
   }else{
     for(const r of DB){
       const e=rcDia(r.envioTarjeta);
-      if(rcEnRango(e)) out.push({r, envio:e, cobrador:r.cobrador});
+      if(rcEnRango(e)) out.push({r, envio:e, cobrador:rcNormCob(r.cobrador)});
     }
   }
   return out;
@@ -2666,14 +2671,14 @@ function rcConstruir(){
   }
 
   if(rcTipo==='recibida'){
-    if(!PAGOS_COL_COB) avisos.push('No se encontró en <i>Bd Pagos</i> una columna de cobrador reconocida. Todos los pagos se asignaron al <b>cobrador de la póliza</b>.');
+    if(!PAGOS_COL_COB) avisos.push('No se encontró en <i>Bd Pagos</i> el campo <b>NOTAS</b> (donde se captura el cobrador). Todos los pagos se asignaron al <b>cobrador de la póliza</b>.');
     let porPoliza=0;
     const det=[];
     for(const r of DB){
       for(const p of (r.pagos||[])){
         const f=rcDia(p.fecha);
         if(!rcEnRango(f)) continue;
-        const cobrador = p.cobrador || r.cobrador;
+        const cobrador = rcNormCob(p.cobrador || r.cobrador);
         if(!pasaCob(cobrador)) continue;
         if(!p.cobrador) porPoliza++;
         det.push({fecha:f, recibo:p.recibo, poliza:r.poliza, nombre:r.nombre, cobrador:cobrador+(p.cobrador?'':' *'),
@@ -2681,7 +2686,7 @@ function rcConstruir(){
       }
     }
     det.forEach(d=>{ d._cobReal=d.cobrador; d.cobrador=d._grupo; });
-    if(porPoliza && PAGOS_COL_COB) avisos.push(`${porPoliza.toLocaleString('es-MX')} pago(s) no traen cobrador (vienen de Pagos Históricos o sin captura); se asignaron al cobrador de la póliza y se marcan con * en el detalle.`);
+    if(porPoliza && PAGOS_COL_COB) avisos.push(`${porPoliza.toLocaleString('es-MX')} pago(s) no traen cobrador (vienen de Pagos Históricos o su campo NOTAS está vacío); se asignaron al cobrador de la póliza y se marcan con * en el detalle.`);
     det.sort((a,b)=>a.cobrador.localeCompare(b.cobrador,'es')||a.fecha-b.fecha);
     const res=rcAgrupar(det,['recibos','monto']);
     const tot=rcTotal(res,['recibos','monto']);
@@ -2713,13 +2718,13 @@ function rcConstruir(){
   if(rcTipo==='sinretorno'){
     const det=[];
     for(const r of DB){
-      if(!pasaCob(r.cobrador)) continue;
+      if(!pasaCob(rcNormCob(r.cobrador))) continue;
       const env=rcDia(r.envioTarjeta); if(!env) continue;
       const ret=rcDia(r.retornoTarjeta);
       if(ret && ret>=env) continue;                 // ya regresó después del último envío
       const dias=rcDias(env,hoy);
       if(dias<rcUmbral) continue;
-      det.push({cobrador:r.cobrador, poliza:r.poliza, nombre:r.nombre, telefono:r.telefono, envio:env, dias,
+      det.push({cobrador:rcNormCob(r.cobrador), poliza:r.poliza, nombre:r.nombre, telefono:r.telefono, envio:env, dias,
         retorno:ret, saldoVencido:r.saldoVencido, estatus:r.estatus,
         _r30:dias<60?1:0, _r60:dias>=60?1:0, _total:1, _vencido:r.saldoVencido||0});
     }
@@ -2735,13 +2740,13 @@ function rcConstruir(){
   if(rcTipo==='sinmov'){
     const det=[];
     for(const r of DB){
-      if(!pasaCob(r.cobrador)) continue;
+      if(!pasaCob(rcNormCob(r.cobrador))) continue;
       if(r.vigenciaActiva===false) continue;
       if(r.estatus==='CANCELADA MANUALMENTE' || !(r.saldoTotal>0.5)) continue;
       const ref=rcDia(r.ultimoPago || r.inicio); if(!ref) continue;
       const dias=rcDias(ref,hoy);
       if(dias<rcUmbral) continue;
-      det.push({cobrador:r.cobrador, poliza:r.poliza, nombre:r.nombre, telefono:r.telefono,
+      det.push({cobrador:rcNormCob(r.cobrador), poliza:r.poliza, nombre:r.nombre, telefono:r.telefono,
         ultimo:r.ultimoPago?rcDia(r.ultimoPago):null, dias, meses:r.mesesAtraso, saldoVencido:r.saldoVencido, estatus:r.estatus,
         _r30:dias<60?1:0, _r60:dias>=60?1:0, _total:1, _vencido:r.saldoVencido||0});
     }
@@ -2809,9 +2814,9 @@ function rcRender(){
 function rcRefrescar(){
   if(!rcInit || !DB) return;
   const sel=$('#rcCobrador'); const prev=sel.value;
-  const cobs=new Set(DB.map(r=>r.cobrador));
-  DB.forEach(r=>(r.pagos||[]).forEach(p=>{ if(p.cobrador) cobs.add(p.cobrador); }));
-  (HIST_ENVIOS||[]).forEach(h=>{ if(h.cobrador) cobs.add(h.cobrador); });
+  const cobs=new Set(DB.map(r=>rcNormCob(r.cobrador)));
+  DB.forEach(r=>(r.pagos||[]).forEach(p=>{ if(p.cobrador) cobs.add(rcNormCob(p.cobrador)); }));
+  (HIST_ENVIOS||[]).forEach(h=>{ if(h.cobrador) cobs.add(rcNormCob(h.cobrador)); });
   sel.innerHTML='<option value="">Todos los cobradores</option>'+[...cobs].sort((a,b)=>a.localeCompare(b,'es')).map(c=>`<option>${rcEsc(c)}</option>`).join('');
   sel.value = [...cobs].includes(prev) ? prev : '';
   if(rcChip!=='manual') rcAplicarChip(rcChip);   // la fecha de corte pudo cambiar
