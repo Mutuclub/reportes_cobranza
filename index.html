@@ -572,8 +572,8 @@
         <button class="rc-tab activo" data-rc="enviada">Cobranza enviada</button>
         <button class="rc-tab" data-rc="recibida">Cobranza recibida</button>
         <button class="rc-tab" data-rc="efectividad">Efectividad</button>
+        <button class="rc-tab" data-rc="sinmov">Pólizas sin pago</button>
         <button class="rc-tab" data-rc="sinretorno">Tarjetas sin retorno</button>
-        <button class="rc-tab" data-rc="sinmov">Cuentas sin movimiento</button>
       </div>
       <div class="rdia-controles">
         <div class="rdia-rango" id="rcCtlRango">
@@ -593,7 +593,21 @@
           <div class="rdia-chips">
             <button class="rdia-chip activo" data-rcumbral="30">30 días o más</button>
             <button class="rdia-chip" data-rcumbral="60">60 días o más</button>
+            <button class="rdia-chip" data-rcumbral="90">90 días o más</button>
           </div>
+        </div>
+        <div class="rdia-rango" id="rcCtlCriterio" style="display:none">
+          <label>Contar días</label>
+          <div class="rdia-chips">
+            <button class="rdia-chip activo" data-rccriterio="ultimo" title="Días desde el último pago registrado (si nunca ha pagado, desde el inicio de vigencia)">Desde el último pago</button>
+            <button class="rdia-chip" data-rccriterio="mensualidad" title="Días desde la mensualidad vencida más antigua que no se ha cubierto">Desde la mensualidad vencida</button>
+          </div>
+        </div>
+        <div class="rdia-rango" id="rcCtlEmpresa" style="display:none">
+          <label for="rcEmpresa">Empresa</label>
+          <select id="rcEmpresa" class="rc-sel">
+            <option value="">Todas</option><option>MUTUCLUB</option><option>JUDA</option><option>ARCA</option><option value="-">(sin empresa)</option>
+          </select>
         </div>
         <span class="rdia-sep">|</span>
         <div class="rdia-rango">
@@ -866,6 +880,7 @@ function calcularRegistro(row, hoy){
     placas: String(g('Placas')||'').trim(),
     vehiculo: String(g('Vehículo')||'').trim(),
     asesor: String(g('Asesor')||'').trim(),
+    empresa: (()=>{ const e=String(g('IdEmpresa')||'').trim().toUpperCase(); return ['MUTUCLUB','JUDA','ARCA'].includes(e)?e:''; })(),
     cobertura: String(g('Tipo Cobertura')||'').trim(),
     tipoPoliza: String(g('Tipo de Póliza')||'').trim(),
     modeloAnio: String(g('Modelo')||'').trim(),
@@ -2556,13 +2571,14 @@ const RC_MAX_PANTALLA = 500;
 function rcNormCob(c){ const t=String(c==null?'':c).trim().replace(/\s+/g,' ').toUpperCase(); return t || '(SIN COBRADOR)'; }
 
 var rcVisible=false, rcTipo='enviada', rcDesde=null, rcHasta=null, rcUmbral=30, rcChip='semana', rcInit=false;
+var rcCriterio='ultimo';   // 'ultimo' | 'mensualidad' (solo Pólizas sin pago)
 
 const RC_DEFS = {
   enviada:    {titulo:'Cobranza enviada',            rango:true},
   recibida:   {titulo:'Cobranza recibida',           rango:true},
   efectividad:{titulo:'Efectividad por cobrador',    rango:true},
   sinretorno: {titulo:'Tarjetas sin retorno',        rango:false},
-  sinmov:     {titulo:'Cuentas sin movimiento',      rango:false}
+  sinmov:     {titulo:'Pólizas sin pago',            rango:false}
 };
 
 /* ---------- utilidades de fecha ---------- */
@@ -2715,49 +2731,73 @@ function rcConstruir(){
       detalle:{cols:[{h:'Cobrador',k:'cobrador',t:'txt'},{h:'Póliza',k:'poliza',t:'txt'},{h:'Nombre',k:'nombre',t:'txt'},{h:'Envío',k:'envio',t:'fecha'},{h:'¿Cobrada?',k:'cobrada',t:'txt'},{h:'Primer pago',k:'primerPago',t:'fecha'},{h:'Monto pagado',k:'montoPagado',t:'money'}],filas:det}};
   }
 
+  // ---- Antigüedad (sin retorno / sin pago): universo común y rangos 30-59 / 60-89 / 90+ ----
+  // Universo acordado (oct-2026): sin pólizas canceladas manualmente (Cancela=-1) ni con vigencia vencida.
+  const empSel=$('#rcEmpresa').value;
+  const pasaEmp = r => !empSel || (empSel==='-' ? !r.empresa : r.empresa===empSel);
+  const enUniverso = r => r.estatus!=='CANCELADA MANUALMENTE' && r.vigenciaActiva!==false;
+  const rangos = dias => ({_r30:dias<60?1:0, _r60:(dias>=60&&dias<90)?1:0, _r90:dias>=90?1:0, _total:1});
+  const RANGO_COLS=[{h:'30 a 59 días',k:'r30',t:'num'},{h:'60 a 89 días',k:'r60',t:'num'},{h:'90 días o más',k:'r90',t:'num'},{h:'Total',k:'total',t:'num'}];
+  const kpisRango = (tot, etiqueta) => [[tot.total.toLocaleString('es-MX'),etiqueta],
+    [tot.r30.toLocaleString('es-MX')+' · '+tot.r60.toLocaleString('es-MX')+' · '+tot.r90.toLocaleString('es-MX'),'30-59 · 60-89 · 90+ días'],
+    [fmtMoney(tot.vencido),'Saldo vencido'],[tot.cobradores,'Cobradores']];
+  if(empSel==='-') avisos.push('Filtrando pólizas <b>sin empresa</b> capturada en Access (campo IdEmpresa vacío).');
+
   if(rcTipo==='sinretorno'){
     const det=[];
     for(const r of DB){
+      if(!enUniverso(r) || !pasaEmp(r)) continue;
       if(!pasaCob(rcNormCob(r.cobrador))) continue;
       const env=rcDia(r.envioTarjeta); if(!env) continue;
       const ret=rcDia(r.retornoTarjeta);
       if(ret && ret>=env) continue;                 // ya regresó después del último envío
       const dias=rcDias(env,hoy);
       if(dias<rcUmbral) continue;
-      det.push({cobrador:rcNormCob(r.cobrador), poliza:r.poliza, nombre:r.nombre, telefono:r.telefono, envio:env, dias,
+      det.push({cobrador:rcNormCob(r.cobrador), poliza:r.poliza, nombre:r.nombre, empresa:r.empresa, telefono:r.telefono, envio:env, dias,
         retorno:ret, saldoVencido:r.saldoVencido, estatus:r.estatus,
-        _r30:dias<60?1:0, _r60:dias>=60?1:0, _total:1, _vencido:r.saldoVencido||0});
+        ...rangos(dias), _vencido:r.saldoVencido||0});
     }
     det.sort((a,b)=>a.cobrador.localeCompare(b.cobrador,'es')||b.dias-a.dias);
-    const res=rcAgrupar(det,['r30','r60','total','vencido']);
-    const tot=rcTotal(res,['r30','r60','total','vencido']);
+    const res=rcAgrupar(det,['r30','r60','r90','total','vencido']);
+    const tot=rcTotal(res,['r30','r60','r90','total','vencido']); tot.cobradores=res.length;
+    avisos.push('Tarjeta sin retorno = tiene <b>Envío Tarjeta 01</b> y <b>Retorno Tarjeta 01</b> está vacío o es anterior al envío. Días contados desde el envío. Excluye pólizas canceladas y con vigencia vencida.');
     return {avisos,
-      kpis:[[tot.total.toLocaleString('es-MX'),`Tarjetas con ${rcUmbral}+ días fuera`],[tot.r30.toLocaleString('es-MX'),'De 30 a 59 días'],[tot.r60.toLocaleString('es-MX'),'60 días o más'],[fmtMoney(tot.vencido),'Saldo vencido']],
-      resumen:{cols:[{h:'Cobrador',k:'cobrador',t:'txt'},{h:'30 a 59 días',k:'r30',t:'num'},{h:'60 días o más',k:'r60',t:'num'},{h:'Total',k:'total',t:'num'},{h:'Saldo vencido',k:'vencido',t:'money'}],filas:res,total:tot},
-      detalle:{cols:[{h:'Cobrador',k:'cobrador',t:'txt'},{h:'Póliza',k:'poliza',t:'txt'},{h:'Nombre',k:'nombre',t:'txt'},{h:'Teléfono',k:'telefono',t:'txt'},{h:'Envío',k:'envio',t:'fecha'},{h:'Días fuera',k:'dias',t:'num'},{h:'Último retorno',k:'retorno',t:'fecha'},{h:'Saldo vencido',k:'saldoVencido',t:'money'},{h:'Estatus',k:'estatus',t:'txt'}],filas:det}};
+      kpis:kpisRango(tot,`Tarjetas con ${rcUmbral}+ días sin retorno`),
+      resumen:{cols:[{h:'Cobrador',k:'cobrador',t:'txt'},...RANGO_COLS,{h:'Saldo vencido',k:'vencido',t:'money'}],filas:res,total:tot},
+      detalle:{cols:[{h:'Cobrador',k:'cobrador',t:'txt'},{h:'Póliza',k:'poliza',t:'txt'},{h:'Nombre',k:'nombre',t:'txt'},{h:'Empresa',k:'empresa',t:'txt'},{h:'Teléfono',k:'telefono',t:'txt'},{h:'Envío',k:'envio',t:'fecha'},{h:'Días sin retorno',k:'dias',t:'num'},{h:'Último retorno',k:'retorno',t:'fecha'},{h:'Saldo vencido',k:'saldoVencido',t:'money'},{h:'Estatus',k:'estatus',t:'txt'}],filas:det}};
   }
 
   if(rcTipo==='sinmov'){
     const det=[];
     for(const r of DB){
+      if(!enUniverso(r) || !pasaEmp(r)) continue;
       if(!pasaCob(rcNormCob(r.cobrador))) continue;
-      if(r.vigenciaActiva===false) continue;
-      if(r.estatus==='CANCELADA MANUALMENTE' || !(r.saldoTotal>0.5)) continue;
-      const ref=rcDia(r.ultimoPago || r.inicio); if(!ref) continue;
-      const dias=rcDias(ref,hoy);
-      if(dias<rcUmbral) continue;
-      det.push({cobrador:rcNormCob(r.cobrador), poliza:r.poliza, nombre:r.nombre, telefono:r.telefono,
-        ultimo:r.ultimoPago?rcDia(r.ultimoPago):null, dias, meses:r.mesesAtraso, saldoVencido:r.saldoVencido, estatus:r.estatus,
-        _r30:dias<60?1:0, _r60:dias>=60?1:0, _total:1, _vencido:r.saldoVencido||0});
+      if(!(r.saldoTotal>0.5)) continue;
+      // A) días desde el último pago (si nunca ha pagado, desde el inicio de vigencia)
+      const ref=rcDia(r.ultimoPago || r.inicio);
+      const diasUlt = ref ? Math.max(0,rcDias(ref,hoy)) : null;
+      // B) días desde la mensualidad vencida más antigua sin cubrir (= próximo pago, si ya pasó)
+      const venc = (r.mesesAtraso>0 && r.proximoPago) ? rcDia(r.proximoPago) : null;
+      const diasMens = venc ? Math.max(0,rcDias(venc,hoy)) : 0;
+      const dias = rcCriterio==='mensualidad' ? diasMens : diasUlt;
+      if(dias==null || dias<rcUmbral) continue;
+      det.push({cobrador:rcNormCob(r.cobrador), poliza:r.poliza, nombre:r.nombre, empresa:r.empresa, asesor:r.asesor, telefono:r.telefono,
+        inicio:r.inicio?rcDia(r.inicio):null, mensual:r.mensual, ultimo:r.ultimoPago?rcDia(r.ultimoPago):null,
+        diasUlt, meses:r.mesesAtraso, vencida:venc, diasMens, saldoVencido:r.saldoVencido, estatus:r.estatus, _dias:dias,
+        ...rangos(dias), _vencido:r.saldoVencido||0});
     }
-    det.sort((a,b)=>a.cobrador.localeCompare(b.cobrador,'es')||b.dias-a.dias);
-    const res=rcAgrupar(det,['r30','r60','total','vencido']);
-    const tot=rcTotal(res,['r30','r60','total','vencido']);
-    avisos.push('Incluye solo pólizas con vigencia activa y saldo pendiente. Si la póliza nunca ha pagado, los días se cuentan desde el inicio de vigencia.');
+    det.sort((a,b)=>a.cobrador.localeCompare(b.cobrador,'es')||b._dias-a._dias);
+    const res=rcAgrupar(det,['r30','r60','r90','total','vencido']);
+    const tot=rcTotal(res,['r30','r60','r90','total','vencido']); tot.cobradores=res.length;
+    avisos.push(rcCriterio==='mensualidad'
+      ? 'Clasificado por <b>días desde la mensualidad vencida</b> más antigua que no se ha cubierto (según fecha de inicio y pagos registrados). Excluye pólizas canceladas, con vigencia vencida o sin saldo.'
+      : 'Clasificado por <b>días desde el último pago registrado</b> (Bd Pagos + Pagos Históricos); si nunca ha pagado, desde el inicio de vigencia. Excluye pólizas canceladas, con vigencia vencida o sin saldo.');
     return {avisos,
-      kpis:[[tot.total.toLocaleString('es-MX'),`Cuentas con ${rcUmbral}+ días sin pago`],[tot.r30.toLocaleString('es-MX'),'De 30 a 59 días'],[tot.r60.toLocaleString('es-MX'),'60 días o más'],[fmtMoney(tot.vencido),'Saldo vencido']],
-      resumen:{cols:[{h:'Cobrador',k:'cobrador',t:'txt'},{h:'30 a 59 días',k:'r30',t:'num'},{h:'60 días o más',k:'r60',t:'num'},{h:'Total',k:'total',t:'num'},{h:'Saldo vencido',k:'vencido',t:'money'}],filas:res,total:tot},
-      detalle:{cols:[{h:'Cobrador',k:'cobrador',t:'txt'},{h:'Póliza',k:'poliza',t:'txt'},{h:'Nombre',k:'nombre',t:'txt'},{h:'Teléfono',k:'telefono',t:'txt'},{h:'Último pago',k:'ultimo',t:'fecha'},{h:'Días sin pago',k:'dias',t:'num'},{h:'Meses atraso',k:'meses',t:'num'},{h:'Saldo vencido',k:'saldoVencido',t:'money'},{h:'Estatus',k:'estatus',t:'txt'}],filas:det}};
+      kpis:kpisRango(tot,`Pólizas con ${rcUmbral}+ días sin pago`),
+      resumen:{cols:[{h:'Cobrador',k:'cobrador',t:'txt'},...RANGO_COLS,{h:'Saldo vencido',k:'vencido',t:'money'}],filas:res,total:tot},
+      detalle:{cols:[{h:'Cobrador',k:'cobrador',t:'txt'},{h:'Póliza',k:'poliza',t:'txt'},{h:'Nombre',k:'nombre',t:'txt'},{h:'Empresa',k:'empresa',t:'txt'},{h:'Asesor',k:'asesor',t:'txt'},{h:'Teléfono',k:'telefono',t:'txt'},
+        {h:'Inicio',k:'inicio',t:'fecha'},{h:'Mensualidad',k:'mensual',t:'money'},{h:'Último pago',k:'ultimo',t:'fecha'},{h:'Días desde último pago',k:'diasUlt',t:'num'},
+        {h:'Mensualidades vencidas',k:'meses',t:'num'},{h:'Días desde mensualidad vencida',k:'diasMens',t:'num'},{h:'Saldo vencido',k:'saldoVencido',t:'money'},{h:'Estatus',k:'estatus',t:'txt'}],filas:det}};
   }
 }
 
@@ -2773,7 +2813,10 @@ function rcSubtitulo(){
   const d=RC_DEFS[rcTipo];
   const cob=$('#rcCobrador').value||'Todos los cobradores';
   const per = d.rango ? `Del ${fmtFecha(rcDesde)} al ${fmtFecha(rcHasta)}` : `${rcUmbral} días o más al ${fmtFecha(rcDia(getHoy()))}`;
-  return `${per} · ${cob}`;
+  const crit = rcTipo==='sinmov' ? (rcCriterio==='mensualidad' ? ' · desde la mensualidad vencida' : ' · desde el último pago') : '';
+  const ev=$('#rcEmpresa').value;
+  const emp = d.rango ? '' : ' · '+(ev==='-' ? 'Sin empresa' : (ev||'Todas las empresas'));
+  return `${per}${crit} · ${cob}${emp}`;
 }
 
 /* ---------- pantalla ---------- */
@@ -2785,6 +2828,8 @@ function rcRender(){
   document.querySelectorAll('#repCob [data-rc]').forEach(b=>b.classList.toggle('activo', b.dataset.rc===rcTipo));
   $('#rcCtlRango').style.display = def.rango ? '' : 'none';
   $('#rcCtlUmbral').style.display = def.rango ? 'none' : '';
+  $('#rcCtlEmpresa').style.display = def.rango ? 'none' : '';
+  $('#rcCtlCriterio').style.display = rcTipo==='sinmov' ? '' : 'none';
   $('#rcTitulo').textContent = '📑 '+def.titulo;
   $('#rcSub').textContent = rcSubtitulo();
 
@@ -2827,7 +2872,10 @@ function rcRefrescar(){
 function rcNombreArchivo(ext){
   const cob=$('#rcCobrador').value ? '_'+$('#rcCobrador').value.replace(/[^\wÁÉÍÓÚÑáéíóúñ]+/g,'_') : '';
   const per = RC_DEFS[rcTipo].rango ? `${rcIso(rcDesde)}_${rcIso(rcHasta)}` : `${rcUmbral}dias_${rcIso(rcDia(getHoy()))}`;
-  return `cobranza_${rcTipo}${cob}_${per}.${ext}`;
+  const crit = rcTipo==='sinmov' ? (rcCriterio==='mensualidad'?'_mensualidad':'_ultimopago') : '';
+  const ev=$('#rcEmpresa').value; const emp = (!RC_DEFS[rcTipo].rango && ev) ? '_'+(ev==='-'?'SINEMPRESA':ev) : '';
+  const nom = {sinmov:'polizas_sin_pago', sinretorno:'tarjetas_sin_retorno'}[rcTipo] || 'cobranza_'+rcTipo;
+  return `${nom}${crit}${emp}${cob}_${per}.${ext}`;
 }
 function rcValorExcel(v,t){
   if(t==='money'||t==='num') return (v==null||isNaN(v))?'':Number(v);
@@ -2931,6 +2979,12 @@ function rcInicializar(){
     document.querySelectorAll('#repCob [data-rcchip]').forEach(b=>b.classList.remove('activo'));
     rcRender();
   });
+  document.querySelectorAll('#repCob [data-rccriterio]').forEach(b=>b.addEventListener('click',()=>{
+    rcCriterio=b.dataset.rccriterio;
+    document.querySelectorAll('#repCob [data-rccriterio]').forEach(x=>x.classList.toggle('activo',x===b));
+    rcRender();
+  }));
+  $('#rcEmpresa').addEventListener('change',rcRender);
   $('#rcCobrador').addEventListener('change',rcRender);
   $('#rcImprimir').addEventListener('click',rcImprimir);
   $('#rcPdf').addEventListener('click',rcPDF);
