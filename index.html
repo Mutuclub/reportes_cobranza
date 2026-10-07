@@ -349,6 +349,16 @@
   .rdia-tbl tfoot td{padding:8px 12px;font-weight:700;color:var(--tinta);background:#eef2f7;border-top:2px solid var(--tinta);white-space:nowrap}
   .rc-vacio{color:var(--suave);font-size:.85rem;padding:16px}
   .rc-nota{color:var(--suave);font-size:.78rem;padding:10px 14px}
+  .rc-multi{position:relative}
+  .rc-multi summary{list-style:none;cursor:pointer;min-width:190px;background:#fff;display:flex;justify-content:space-between;gap:8px;user-select:none}
+  .rc-multi summary::-webkit-details-marker{display:none}
+  .rc-multi summary::after{content:'▾';color:var(--suave)}
+  .rc-multi-panel{position:absolute;z-index:30;top:calc(100% + 4px);left:0;background:#fff;border:1px solid var(--linea);border-radius:10px;box-shadow:0 8px 24px rgba(15,39,64,.15);padding:8px;min-width:280px}
+  .rc-multi-acc{display:flex;gap:6px;padding:2px 4px 8px;border-bottom:1px solid var(--linea);margin-bottom:6px}
+  .rc-multi-acc button{border:1px solid var(--linea);background:#f8fafc;border-radius:6px;padding:4px 10px;font-size:.78rem;font-family:inherit;cursor:pointer;color:var(--tinta);font-weight:600}
+  .rc-multi-op{display:flex;align-items:center;gap:8px;padding:6px 6px;border-radius:6px;font-size:.83rem;cursor:pointer}
+  .rc-multi-op:hover{background:#f3f6fa}
+  .rc-multi-op .n{margin-left:auto;color:var(--suave);font-variant-numeric:tabular-nums;font-size:.78rem}
 </style>
 </head>
 <body>
@@ -608,6 +618,16 @@
           <select id="rcEmpresa" class="rc-sel">
             <option value="">Todas</option><option>MUTUCLUB</option><option>JUDA</option><option>ARCA</option><option value="-">(sin empresa)</option>
           </select>
+        </div>
+        <div class="rdia-rango" id="rcCtlEstatus" style="display:none">
+          <label>Estatus</label>
+          <details class="rc-multi" id="rcEstatusBox">
+            <summary class="rc-sel" id="rcEstatusResumen">Todos</summary>
+            <div class="rc-multi-panel">
+              <div class="rc-multi-acc"><button type="button" id="rcEstTodos">Todos</button><button type="button" id="rcEstNinguno">Ninguno</button></div>
+              <div id="rcEstatusOpciones"></div>
+            </div>
+          </details>
         </div>
         <span class="rdia-sep">|</span>
         <div class="rdia-rango">
@@ -2572,6 +2592,9 @@ function rcNormCob(c){ const t=String(c==null?'':c).trim().replace(/\s+/g,' ').t
 
 var rcVisible=false, rcTipo='enviada', rcDesde=null, rcHasta=null, rcUmbral=30, rcChip='semana', rcInit=false;
 var rcCriterio='ultimo';   // 'ultimo' | 'mensualidad' (solo Pólizas sin pago)
+var rcEstatusSel=null;     // null = todos; si no, Set con los estatus marcados
+var rcEstatusConteo={};    // estatus -> renglones antes de aplicar el filtro de estatus
+const RC_ESTATUS = ['VIGENTE','ATRASADA','PROBLEMA','CANCELADA POR FALTA DE PAGO','PAGADA'];  // canceladas manualmente ya quedan fuera del universo
 
 const RC_DEFS = {
   enviada:    {titulo:'Cobranza enviada',            rango:true},
@@ -2742,9 +2765,17 @@ function rcConstruir(){
     [tot.r30.toLocaleString('es-MX')+' · '+tot.r60.toLocaleString('es-MX')+' · '+tot.r90.toLocaleString('es-MX'),'30-59 · 60-89 · 90+ días'],
     [fmtMoney(tot.vencido),'Saldo vencido'],[tot.cobradores,'Cobradores']];
   if(empSel==='-') avisos.push('Filtrando pólizas <b>sin empresa</b> capturada en Access (campo IdEmpresa vacío).');
+  // filtro de Estatus (selección múltiple): cuenta por estatus ANTES de filtrar, para mostrar cuántas hay de cada uno
+  const filtrarEstatus = det => {
+    rcEstatusConteo={}; det.forEach(f=>{ rcEstatusConteo[f.estatus]=(rcEstatusConteo[f.estatus]||0)+1; });
+    rcPintarEstatus();
+    if(!rcEstatusSel) return det;
+    avisos.push('Estatus seleccionados: <b>'+([...rcEstatusSel].join(', ')||'ninguno')+'</b>.');
+    return det.filter(f=>rcEstatusSel.has(f.estatus));
+  };
 
   if(rcTipo==='sinretorno'){
-    const det=[];
+    let det=[];
     for(const r of DB){
       if(!enUniverso(r) || !pasaEmp(r)) continue;
       if(!pasaCob(rcNormCob(r.cobrador))) continue;
@@ -2757,6 +2788,7 @@ function rcConstruir(){
         retorno:ret, saldoVencido:r.saldoVencido, estatus:r.estatus,
         ...rangos(dias), _vencido:r.saldoVencido||0});
     }
+    det=filtrarEstatus(det);
     det.sort((a,b)=>a.cobrador.localeCompare(b.cobrador,'es')||b.dias-a.dias);
     const res=rcAgrupar(det,['r30','r60','r90','total','vencido']);
     const tot=rcTotal(res,['r30','r60','r90','total','vencido']); tot.cobradores=res.length;
@@ -2768,7 +2800,7 @@ function rcConstruir(){
   }
 
   if(rcTipo==='sinmov'){
-    const det=[];
+    let det=[];
     for(const r of DB){
       if(!enUniverso(r) || !pasaEmp(r)) continue;
       if(!pasaCob(rcNormCob(r.cobrador))) continue;
@@ -2786,6 +2818,7 @@ function rcConstruir(){
         diasUlt, meses:r.mesesAtraso, vencida:venc, diasMens, saldoVencido:r.saldoVencido, estatus:r.estatus, _dias:dias,
         ...rangos(dias), _vencido:r.saldoVencido||0});
     }
+    det=filtrarEstatus(det);
     det.sort((a,b)=>a.cobrador.localeCompare(b.cobrador,'es')||b._dias-a._dias);
     const res=rcAgrupar(det,['r30','r60','r90','total','vencido']);
     const tot=rcTotal(res,['r30','r60','r90','total','vencido']); tot.cobradores=res.length;
@@ -2799,6 +2832,17 @@ function rcConstruir(){
         {h:'Inicio',k:'inicio',t:'fecha'},{h:'Mensualidad',k:'mensual',t:'money'},{h:'Último pago',k:'ultimo',t:'fecha'},{h:'Días desde último pago',k:'diasUlt',t:'num'},
         {h:'Mensualidades vencidas',k:'meses',t:'num'},{h:'Días desde mensualidad vencida',k:'diasMens',t:'num'},{h:'Saldo vencido',k:'saldoVencido',t:'money'},{h:'Estatus',k:'estatus',t:'txt'}],filas:det}};
   }
+}
+
+/* ---------- filtro de Estatus (selección múltiple) ---------- */
+function rcPintarEstatus(){
+  const cont=$('#rcEstatusOpciones'); if(!cont) return;
+  cont.innerHTML = RC_ESTATUS.map(e=>{
+    const n=rcEstatusConteo[e]||0, chk=!rcEstatusSel||rcEstatusSel.has(e);
+    return `<label class="rc-multi-op"><input type="checkbox" value="${rcEsc(e)}"${chk?' checked':''}> ${rcEsc(e)}<span class="n">${n.toLocaleString('es-MX')}</span></label>`;
+  }).join('');
+  const sel = rcEstatusSel ? [...rcEstatusSel] : null;
+  $('#rcEstatusResumen').textContent = !sel ? 'Todos' : (sel.length===0 ? 'Ninguno' : (sel.length===1 ? sel[0] : sel.length+' seleccionados'));
 }
 
 /* ---------- formato de celdas ---------- */
@@ -2816,7 +2860,8 @@ function rcSubtitulo(){
   const crit = rcTipo==='sinmov' ? (rcCriterio==='mensualidad' ? ' · desde la mensualidad vencida' : ' · desde el último pago') : '';
   const ev=$('#rcEmpresa').value;
   const emp = d.rango ? '' : ' · '+(ev==='-' ? 'Sin empresa' : (ev||'Todas las empresas'));
-  return `${per}${crit} · ${cob}${emp}`;
+  const est = (!d.rango && rcEstatusSel) ? ' · Estatus: '+([...rcEstatusSel].join(', ')||'ninguno') : '';
+  return `${per}${crit} · ${cob}${emp}${est}`;
 }
 
 /* ---------- pantalla ---------- */
@@ -2830,6 +2875,7 @@ function rcRender(){
   $('#rcCtlUmbral').style.display = def.rango ? 'none' : '';
   $('#rcCtlEmpresa').style.display = def.rango ? 'none' : '';
   $('#rcCtlCriterio').style.display = rcTipo==='sinmov' ? '' : 'none';
+  $('#rcCtlEstatus').style.display = def.rango ? 'none' : '';
   $('#rcTitulo').textContent = '📑 '+def.titulo;
   $('#rcSub').textContent = rcSubtitulo();
 
@@ -2985,6 +3031,14 @@ function rcInicializar(){
     rcRender();
   }));
   $('#rcEmpresa').addEventListener('change',rcRender);
+  $('#rcEstatusOpciones').addEventListener('change',()=>{
+    const marcados=[...document.querySelectorAll('#rcEstatusOpciones input:checked')].map(i=>i.value);
+    rcEstatusSel = marcados.length===RC_ESTATUS.length ? null : new Set(marcados);
+    rcRender();
+  });
+  $('#rcEstTodos').addEventListener('click',()=>{ rcEstatusSel=null; rcRender(); });
+  $('#rcEstNinguno').addEventListener('click',()=>{ rcEstatusSel=new Set(); rcRender(); });
+  document.addEventListener('click',e=>{ const b=$('#rcEstatusBox'); if(b && b.open && !b.contains(e.target)) b.open=false; });
   $('#rcCobrador').addEventListener('change',rcRender);
   $('#rcImprimir').addEventListener('click',rcImprimir);
   $('#rcPdf').addEventListener('click',rcPDF);
