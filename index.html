@@ -359,6 +359,33 @@
   .rc-multi-op{display:flex;align-items:center;gap:8px;padding:6px 6px;border-radius:6px;font-size:.83rem;cursor:pointer}
   .rc-multi-op:hover{background:#f3f6fa}
   .rc-multi-op .n{margin-left:auto;color:var(--suave);font-variant-numeric:tabular-nums;font-size:.78rem}
+
+  /* ---------- Análisis de Cartera (todos los usuarios) ---------- */
+  #anCart{display:none;margin-top:22px}
+  #anCart.visible{display:block}
+  .ac-sel{padding:6px 10px;border:1px solid var(--linea);border-radius:8px;font-size:.83rem;font-family:inherit;color:var(--texto);background:#fff;max-width:260px}
+  .ac-tbl th{cursor:pointer;user-select:none;white-space:normal;line-height:1.25;vertical-align:bottom}
+  @media (max-width:600px){ .ac-tbl td.ac-grupo{min-width:120px;font-size:.78rem} }
+  .ac-tbl th .arr{opacity:.45;font-size:.7rem}
+  .ac-tbl td.ac-grupo{font-weight:600;color:var(--tinta);min-width:180px}
+  .ac-tbl td.ac-n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .ac-cel{background:none;border:none;font:inherit;font-variant-numeric:tabular-nums;padding:2px 6px;border-radius:6px;cursor:pointer;color:inherit;min-width:34px;text-align:right}
+  .ac-cel:hover{background:#e3e9f1;text-decoration:underline}
+  .ac-cel.cero{color:#b6c0cc;cursor:default}
+  .ac-cel.cero:hover{background:none;text-decoration:none}
+  .ac-cel.sel{background:var(--tinta);color:#fff}
+  .ac-tbl th.e-ok,.ac-tbl td.e-ok{color:var(--ok)}
+  .ac-tbl th.e-atraso,.ac-tbl td.e-atraso{color:var(--atraso)}
+  .ac-tbl th.e-riesgo,.ac-tbl td.e-riesgo{color:var(--riesgo)}
+  .ac-tbl th.e-gris,.ac-tbl td.e-gris{color:var(--suave)}
+  .ac-pct{display:inline-block;min-width:52px;padding:2px 8px;border-radius:10px;font-weight:700;font-size:.78rem;text-align:center}
+  .ac-pct.alto{background:var(--riesgo-bg);color:var(--riesgo)}
+  .ac-pct.medio{background:var(--atraso-bg);color:var(--atraso)}
+  .ac-pct.bajo{background:var(--ok-bg);color:var(--ok)}
+  .ac-pol{background:none;border:none;font:inherit;font-weight:700;color:var(--tinta-2);cursor:pointer;text-decoration:underline;padding:0}
+  .ac-ayuda{font-size:.76rem;color:var(--suave);padding:8px 2px 0}
+  .ac-sel-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+  .ac-x{background:none;border:1px solid var(--linea);border-radius:6px;padding:2px 8px;font-size:.75rem;cursor:pointer;font-family:inherit;color:var(--tinta);text-transform:none;letter-spacing:0}
 </style>
 </head>
 <body>
@@ -381,6 +408,7 @@
       <button class="header-btn" id="btnUsuarios" style="display:none">⚙️ Usuarios</button>
       <button class="header-btn" id="btnReporteDia" style="display:none" title="Ver resumen de gestiones del día">📊 Reporte del Día</button>
       <button class="header-btn" id="btnRepCob" style="display:none" title="Reportes de cobranza por cobrador (imprimir, PDF, Excel)">📑 Reportes Cobranza</button>
+      <button class="header-btn" id="btnAnCart" title="Pólizas por estatus agrupadas por asesor, cobrador, cobertura, municipio y más">📈 Análisis de Cartera</button>
       <button class="header-btn" id="btnLogout">Salir</button>
     </div>
   </div>
@@ -636,6 +664,41 @@
         </div>
       </div>
       <div class="rdia-body" id="rcCuerpo"></div>
+    </div>
+
+    <!-- ===== ANÁLISIS DE CARTERA (todos los usuarios) ===== -->
+    <div id="anCart">
+      <div class="rdia-header">
+        <div>
+          <h3>📈 Análisis de Cartera</h3>
+          <div class="rdia-fecha" id="acSub"></div>
+        </div>
+        <div class="rc-acciones">
+          <button class="rdia-btn-export" id="acExcel">⬇️ Descargar Excel</button>
+        </div>
+      </div>
+      <div class="rdia-controles">
+        <div class="rdia-rango">
+          <label for="acDim">Agrupar por</label>
+          <select id="acDim" class="ac-sel"></select>
+        </div>
+        <span class="rdia-sep">|</span>
+        <div class="rdia-rango">
+          <label for="acVig">Vigencia</label>
+          <select id="acVig" class="ac-sel">
+            <option value="activa" selected>Solo vigencia activa</option>
+            <option value="vencida">Solo vigencia vencida</option>
+            <option value="">Todas</option>
+          </select>
+        </div>
+        <span class="rdia-sep">|</span>
+        <div class="rdia-rango">
+          <label for="acFiltroDim">Filtrar</label>
+          <select id="acFiltroDim" class="ac-sel"><option value="">Sin filtro</option></select>
+          <select id="acFiltroVal" class="ac-sel" style="display:none"></select>
+        </div>
+      </div>
+      <div class="rdia-body" id="acCuerpo"></div>
     </div>
   </div>
   </div>
@@ -903,6 +966,8 @@ function calcularRegistro(row, hoy){
     empresa: (()=>{ const e=String(g('IdEmpresa')||'').trim().toUpperCase(); return ['MUTUCLUB','JUDA','ARCA'].includes(e)?e:''; })(),
     cobertura: String(g('Tipo Cobertura')||'').trim(),
     tipoPoliza: String(g('Tipo de Póliza')||'').trim(),
+    tipoCobro: acNorm(g('Tipo de Cobro')),
+    municipio: acMunicipio(row),
     modeloAnio: String(g('Modelo')||'').trim(),
     tipoVeh: String(g('Tipo')||'').trim(),
     color: String(g('Color')||'').trim(),
@@ -1256,6 +1321,7 @@ function recalcular(){
   construirDashboard();
   render();
   rcRefrescar();
+  acRefrescar();
 }
 
 /* ============================================================
@@ -3057,6 +3123,346 @@ $('#btnRepCob').addEventListener('click',()=>{
   }
 });
 
+
+/* ============================================================
+   ANÁLISIS DE CARTERA (todos los usuarios)
+   Tabla dinámica: agrupa la cartera por un criterio y cuenta las
+   pólizas por estatus. Usa el MISMO estatus que calcula
+   calcularRegistro(), así que cuadra con el resto de la app.
+   ============================================================ */
+const AC_ESTATUS = [
+  {k:'VIGENTE',                     h:'Vigentes',            cls:'e-ok'},
+  {k:'ATRASADA',                    h:'Atrasadas',           cls:'e-atraso'},
+  {k:'PROBLEMA',                    h:'Problema',            cls:'e-riesgo'},
+  {k:'CANCELADA POR FALTA DE PAGO', h:'Canc. falta de pago', cls:'e-riesgo'},
+  {k:'CANCELADA MANUALMENTE',       h:'Canc. manual',        cls:'e-gris'},
+  {k:'PAGADA',                      h:'Pagadas',             cls:'e-ok'}
+];
+const AC_EN_ATRASO = ['ATRASADA','PROBLEMA','CANCELADA POR FALTA DE PAGO'];
+const AC_CON_ADEUDO = ['VIGENTE','ATRASADA','PROBLEMA','CANCELADA POR FALTA DE PAGO'];
+const AC_MES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+const AC_SIN_DATO = '(SIN DATO)';
+
+// Equivalencias de municipio (valor ya normalizado -> como se agrupa). Editable.
+// Un valor '' significa "no es municipio" (se usa el del domicilio particular).
+const AC_EQUIV_MUNICIPIO = {
+  'TLAQUEPAQUE':'SAN PEDRO TLAQUEPAQUE', 'SN PEDRO TLAQUEPAQUE':'SAN PEDRO TLAQUEPAQUE', 'TLAQIUEPAQUE':'SAN PEDRO TLAQUEPAQUE',
+  'GUADALARA':'GUADALAJARA', 'GUADAAJARA':'GUADALAJARA', 'TALPITA':'GUADALAJARA',
+  'SALTO JAL':'EL SALTO', 'SALTO':'EL SALTO', 'ARENAL':'EL ARENAL',
+  'ECATEPEC MEX':'ECATEPEC DE MORELOS', 'POTRILLOS':'POTRERILLOS', 'POTRILLEROS':'POTRERILLOS',
+  'JALISCO':''
+};
+
+// Mayúsculas, sin acentos en vocales (la Ñ se respeta), sin puntos/comas, espacios simples
+function acNorm(v){
+  return String(v==null?'':v).toUpperCase()
+    .replace(/[ÁÀÄ]/g,'A').replace(/[ÉÈË]/g,'E').replace(/[ÍÌÏ]/g,'I').replace(/[ÓÒÖ]/g,'O').replace(/[ÚÙÜ]/g,'U')
+    .replace(/[.,;]/g,' ').replace(/\s+/g,' ').trim();
+}
+function acMuni(v){
+  const n=acNorm(v);
+  return (n in AC_EQUIV_MUNICIPIO) ? AC_EQUIV_MUNICIPIO[n] : n;
+}
+// Municipio de cobro si viene capturado; si no, el del domicilio particular
+function acMunicipio(row){
+  return acMuni(row['Municipio de Cobro']) || acMuni(row['Municipio']);
+}
+function acFamiliaCobertura(c){
+  const n=acNorm(c);
+  if(!n) return '';
+  if(n.startsWith('JUDA')) return 'JUDA';
+  if(n.includes('CAR MUTUAL')) return 'CAR MUTUAL';
+  if(n.startsWith('AMPLIA')) return 'AMPLIA';
+  if(n.startsWith('LIMITADA')) return 'LIMITADA';
+  if(n.startsWith('TERCEROS')) return 'TERCEROS';
+  return 'OTRAS';
+}
+const AC_RANGOS = ['Sin saldo pendiente','0 a 30 días','31 a 60 días','61 a 90 días','91 a 180 días','Más de 180 días','Sin fecha'];
+// Días sin pago: desde el último pago; si nunca ha pagado, desde el inicio de vigencia
+// (mismo criterio que el reporte "Pólizas sin pago")
+function acRangoDias(r){
+  if(r.saldoTotal<=0.5) return AC_RANGOS[0];
+  const ref = r.ultimoPago || r.inicio;
+  if(!ref) return AC_RANGOS[6];
+  const d = Math.floor((rcDia(getHoy()) - rcDia(ref))/86400000);
+  if(d<=30) return AC_RANGOS[1];
+  if(d<=60) return AC_RANGOS[2];
+  if(d<=90) return AC_RANGOS[3];
+  if(d<=180) return AC_RANGOS[4];
+  return AC_RANGOS[5];
+}
+
+// Criterios de agrupación. orden: 'total' (más pólizas primero), 'desc' (llave descendente) o una lista fija
+const AC_DIMS = {
+  asesor:      {h:'Asesor',               val:r=>acNorm(r.asesor)},
+  cobrador:    {h:'Cobrador',             val:r=>{ const c=acNorm(r.cobrador); return c==='(SIN COBRADOR)'?'':c; }},
+  cobertura:   {h:'Cobertura',            val:r=>acNorm(r.cobertura)},
+  familia:     {h:'Cobertura (agrupada)', val:r=>acFamiliaCobertura(r.cobertura)},
+  municipio:   {h:'Municipio',            val:r=>r.municipio},
+  tipoPoliza:  {h:'Tipo de póliza',       val:r=>acNorm(r.tipoPoliza)},
+  tipoCobro:   {h:'Tipo de cobro',        val:r=>r.tipoCobro},
+  mesInicio:   {h:'Mes de inicio',        val:r=>r.inicio ? r.inicio.getFullYear()+'-'+String(r.inicio.getMonth()+1).padStart(2,'0') : '',
+                etiqueta:k=>{ if(!/^\d{4}-\d{2}$/.test(k)) return k; const [y,m]=k.split('-'); return AC_MES[+m-1]+' '+y; },
+                orden:'desc'},
+  diasSinPago: {h:'Días sin pago',        val:r=>acRangoDias(r), orden:AC_RANGOS}
+};
+
+let acVisible=false, acInit=false, acDim='cobrador', acSort={col:null,dir:-1}, acSelGrupo=null, acSelEst=null, AC_ULTIMO=null;
+
+function acValor(dimKey, r){ return AC_DIMS[dimKey].val(r) || AC_SIN_DATO; }
+function acEtiqueta(dimKey, k){ const f=AC_DIMS[dimKey].etiqueta; return f ? f(k) : k; }
+
+function acBase(){
+  const vig=$('#acVig').value, fd=$('#acFiltroDim').value, fv=$('#acFiltroVal').value;
+  return DB.filter(r=>{
+    if(vig==='activa' && r.vigenciaActiva!==true) return false;
+    if(vig==='vencida' && r.vigenciaActiva!==false) return false;
+    if(fd && fv && acValor(fd,r)!==fv) return false;
+    return true;
+  });
+}
+
+function acConstruir(){
+  const base=acBase();
+  const grupos=new Map();
+  const nuevo=()=>{ const g={total:0,porCobrar:0,polizas:[]}; AC_ESTATUS.forEach(e=>g[e.k]=0); return g; };
+  const tot=nuevo();
+  for(const r of base){
+    const k=acValor(acDim,r);
+    if(!grupos.has(k)) grupos.set(k,nuevo());
+    for(const g of [grupos.get(k),tot]){
+      g[r.estatus]=(g[r.estatus]||0)+1; g.total++;
+      if(r.estatus==='ATRASADA'||r.estatus==='PROBLEMA') g.porCobrar+=r.saldoVencido;
+    }
+    grupos.get(k).polizas.push(r);
+  }
+  const pct = g => { const den=AC_CON_ADEUDO.reduce((s,e)=>s+g[e],0); return den ? AC_EN_ATRASO.reduce((s,e)=>s+g[e],0)/den : null; };
+  let filas=[...grupos.entries()].map(([k,g])=>({k, etiqueta:acEtiqueta(acDim,k), ...g, pct:pct(g)}));
+  tot.pct=pct(tot);
+
+  // orden
+  const dim=AC_DIMS[acDim];
+  if(acSort.col){
+    const c=acSort.col, d=acSort.dir;
+    filas.sort((a,b)=>{
+      const x=c==='etiqueta'?a.k:(a[c]??-1), y=c==='etiqueta'?b.k:(b[c]??-1);
+      return (typeof x==='string' ? x.localeCompare(y,'es') : x-y)*d;
+    });
+  }else if(Array.isArray(dim.orden)){
+    filas.sort((a,b)=>dim.orden.indexOf(a.k)-dim.orden.indexOf(b.k));
+  }else if(dim.orden==='desc'){
+    filas.sort((a,b)=>b.k.localeCompare(a.k));
+  }else{
+    filas.sort((a,b)=>b.total-a.total || a.k.localeCompare(b.k,'es'));
+  }
+  // "(SIN DATO)" siempre al final
+  filas.sort((a,b)=>(a.k===AC_SIN_DATO)-(b.k===AC_SIN_DATO));
+  return {base, filas, tot};
+}
+
+function acPctHTML(p, ref){
+  if(p==null) return '<span style="color:#b6c0cc">—</span>';
+  const cls = p>=Math.max(ref*1.25, ref+0.05) ? 'alto' : p>ref ? 'medio' : 'bajo';
+  return `<span class="ac-pct ${cls}">${rcPct(p)}</span>`;
+}
+
+function acSubtitulo(){
+  const vig={activa:'vigencia activa',vencida:'vigencia vencida','':'todas las vigencias'}[$('#acVig').value];
+  const fd=$('#acFiltroDim').value, fv=$('#acFiltroVal').value;
+  const filtro = fd&&fv ? ` · ${AC_DIMS[fd].h}: ${acEtiqueta(fd,fv)}` : '';
+  return `Corte al ${fmtFecha(getHoy())} · ${vig}${filtro} · agrupado por ${AC_DIMS[acDim].h.toLowerCase()}`;
+}
+
+function acRender(){
+  if(!acVisible) return;
+  $('#acSub').textContent = acSubtitulo();
+  if(!DB || !DB.length){ $('#acCuerpo').innerHTML='<p class="rc-vacio">El análisis aparece en cuanto terminen de cargar los datos.</p>'; return; }
+  const R=acConstruir(); AC_ULTIMO=R;
+  const t=R.tot, n=v=>v.toLocaleString('es-MX');
+  const enAtraso=AC_EN_ATRASO.reduce((s,e)=>s+t[e],0);
+
+  const kpis=[
+    [n(t.total),'Pólizas','var(--tinta)'],
+    [n(t.VIGENTE),'Vigentes al día','var(--ok)'],
+    [n(t.ATRASADA+t.PROBLEMA),'Atrasadas + problema','var(--atraso)'],
+    [n(t['CANCELADA POR FALTA DE PAGO']),'Canc. falta de pago','var(--riesgo)'],
+    [rcPct(t.pct),'En atraso','var(--riesgo)'],
+    [fmtMoney(t.porCobrar),'Por cobrar (atraso)','var(--riesgo)']
+  ];
+  const kpiHTML=`<div class="rdia-kpis">${kpis.map(k=>`<div class="rdia-kpi"><div class="rk-n" style="font-size:1.45rem;color:${k[2]}">${k[0]}</div><div class="rk-l">${k[1]}</div></div>`).join('')}</div>`;
+
+  const arr=c=>acSort.col===c?(acSort.dir>0?'▲':'▼'):'⇅';
+  const cols=[{c:'etiqueta',h:AC_DIMS[acDim].h,cls:''}]
+    .concat(AC_ESTATUS.map(e=>({c:e.k,h:e.h,cls:e.cls+' rc-num',est:e.k})))
+    .concat([{c:'total',h:'Total',cls:'rc-num',est:'*'},{c:'pct',h:'% en atraso',cls:'rc-num'},{c:'porCobrar',h:'Por cobrar (atraso)',cls:'rc-num'}]);
+  const thead='<tr>'+cols.map(x=>`<th class="${x.cls}" data-acsort="${x.c}">${rcEsc(x.h)} <span class="arr">${arr(x.c)}</span></th>`).join('')+'</tr>';
+
+  const celda=(f,est,val)=>{
+    const sel = acSelGrupo===f.k && acSelEst===est;
+    return val ? `<button class="ac-cel${sel?' sel':''}" data-g="${rcEsc(f.k)}" data-e="${rcEsc(est)}" title="Ver las pólizas">${n(val)}</button>`
+               : `<span class="ac-cel cero">0</span>`;
+  };
+  const fila=(f,esTotal)=>'<tr>'+cols.map(x=>{
+    if(x.c==='etiqueta') return `<td class="ac-grupo">${esTotal?'TOTAL':rcEsc(f.etiqueta)}</td>`;
+    if(x.c==='pct') return `<td class="ac-n">${acPctHTML(f.pct, t.pct||0)}</td>`;
+    if(x.c==='porCobrar') return `<td class="ac-n">${fmtMoney(f.porCobrar)}</td>`;
+    const val = x.c==='total' ? f.total : f[x.c];
+    if(esTotal) return `<td class="ac-n ${x.cls}">${n(val)}</td>`;
+    return `<td class="ac-n ${x.cls}">${celda(f,x.est,val)}</td>`;
+  }).join('')+'</tr>';
+
+  const tabla = R.filas.length
+    ? `<table class="rdia-tbl ac-tbl"><thead>${thead}</thead><tbody>${R.filas.map(f=>fila(f,false)).join('')}</tbody><tfoot>${fila(t,true)}</tfoot></table>`
+    : '<p class="rc-vacio">No hay pólizas con estos filtros.</p>';
+
+  const ayuda = `<div class="ac-ayuda">Haz clic en cualquier número para ver las pólizas. <b>% en atraso</b> = (atrasadas + problema + canceladas por falta de pago) ÷ pólizas con adeudo (sin pagadas ni canceladas manualmente); se marca en rojo o ámbar cuando está arriba del promedio (${rcPct(t.pct)}). <b>Por cobrar</b> = saldo vencido de atrasadas y problema.</div>`;
+
+  $('#acCuerpo').innerHTML = kpiHTML +
+    `<div class="rdia-bloque" style="margin-bottom:16px"><div class="rdia-bloque-head">Pólizas por ${rcEsc(AC_DIMS[acDim].h.toLowerCase())} y estatus (${n(R.filas.length)} ${R.filas.length===1?'grupo':'grupos'})</div><div class="rdia-tbl-wrap">${tabla}</div></div>` +
+    ayuda + `<div id="acDetalle" style="margin-top:16px"></div>`;
+
+  $('#acCuerpo').querySelectorAll('[data-acsort]').forEach(th=>th.onclick=()=>{
+    const c=th.dataset.acsort;
+    if(acSort.col===c) acSort.dir*=-1; else { acSort.col=c; acSort.dir = c==='etiqueta'?1:-1; }
+    acRender();
+  });
+  $('#acCuerpo').querySelectorAll('button.ac-cel').forEach(b=>b.onclick=()=>{
+    if(acSelGrupo===b.dataset.g && acSelEst===b.dataset.e){ acSelGrupo=null; acSelEst=null; }
+    else { acSelGrupo=b.dataset.g; acSelEst=b.dataset.e; }
+    acRender();
+    if(acSelGrupo!==null){ const d=$('#acDetalle'); if(d) d.scrollIntoView({behavior:'smooth',block:'start'}); }
+  });
+  acRenderDetalle();
+}
+
+function acPolizasSeleccion(){
+  if(acSelGrupo===null || !AC_ULTIMO) return null;
+  const g=AC_ULTIMO.filas.find(f=>f.k===acSelGrupo);
+  if(!g){ acSelGrupo=null; acSelEst=null; return null; }
+  return g.polizas.filter(r=>acSelEst==='*' || r.estatus===acSelEst)
+    .sort((a,b)=>b.saldoVencido-a.saldoVencido || b.mesesAtraso-a.mesesAtraso);
+}
+
+const AC_COLS_DET = [
+  {h:'Póliza', v:r=>r.poliza, t:'txt'},
+  {h:'Nombre', v:r=>r.nombre, t:'txt'},
+  {h:'Teléfono', v:r=>r.telefono, t:'txt'},
+  {h:'Estatus', v:r=>r.estatus, t:'txt'},
+  {h:'Meses atraso', v:r=>r.mesesAtraso, t:'num'},
+  {h:'Por cobrar', v:r=>r.saldoVencido, t:'money'},
+  {h:'Saldo total', v:r=>r.saldoTotal, t:'money'},
+  {h:'Último pago', v:r=>r.ultimoPago, t:'fecha'},
+  {h:'Fin vigencia', v:r=>r.termino, t:'fecha'},
+  {h:'Cobrador', v:r=>r.cobrador, t:'txt'},
+  {h:'Asesor', v:r=>r.asesor, t:'txt'},
+  {h:'Cobertura', v:r=>r.cobertura, t:'txt'},
+  {h:'Municipio', v:r=>r.municipio, t:'txt'},
+  {h:'Tipo de cobro', v:r=>r.tipoCobro, t:'txt'}
+];
+
+function acRenderDetalle(){
+  const cont=$('#acDetalle'); if(!cont) return;
+  const lista=acPolizasSeleccion();
+  if(!lista){ cont.innerHTML=''; return; }
+  const est = acSelEst==='*' ? 'todas' : (AC_ESTATUS.find(e=>e.k===acSelEst)||{h:acSelEst}).h.toLowerCase();
+  const visibles=lista.slice(0,RC_MAX_PANTALLA);
+  const fmt=(c,r)=>{
+    const v=c.v(r);
+    if(c.h==='Póliza') return `<button class="ac-pol" data-pol="${rcEsc(v)}" title="Abrir la póliza en la consulta individual">${rcEsc(v)}</button>`;
+    if(c.h==='Teléfono') return v?`<a href="https://wa.me/52${soloDigitos(v).slice(0,10)}" target="_blank">${rcEsc(v)}</a>`:'—';
+    if(c.t==='money') return fmtMoney(v);
+    if(c.t==='fecha') return fmtFecha(v);
+    if(c.t==='num') return v==null?'—':v;
+    return rcEsc(v||'—');
+  };
+  cont.innerHTML = `<div class="rdia-bloque"><div class="rdia-bloque-head ac-sel-head">
+      <span>${rcEsc(acEtiqueta(acDim,acSelGrupo))} · ${rcEsc(est)} (${lista.length.toLocaleString('es-MX')})</span>
+      <button class="ac-x" id="acCerrarDet">✕ Cerrar</button></div>
+    <div class="rdia-tbl-wrap"><table class="rdia-tbl"><thead><tr>${AC_COLS_DET.map(c=>`<th class="${c.t==='txt'?'':'rc-num'}">${c.h}</th>`).join('')}</tr></thead>
+    <tbody>${visibles.map(r=>'<tr>'+AC_COLS_DET.map(c=>`<td class="${c.t==='txt'?'':'rc-num'}">${fmt(c,r)}</td>`).join('')+'</tr>').join('')}</tbody></table></div>
+    ${lista.length>RC_MAX_PANTALLA?`<p class="rc-nota">Se muestran ${RC_MAX_PANTALLA} de ${lista.length.toLocaleString('es-MX')}. El Excel incluye todas.</p>`:''}
+    <p class="rc-nota">Haz clic en el número de póliza para abrir su ficha, ver sus pagos y registrar una gestión.</p></div>`;
+  $('#acCerrarDet').onclick=()=>{ acSelGrupo=null; acSelEst=null; acRender(); };
+  cont.querySelectorAll('.ac-pol').forEach(b=>b.onclick=()=>{
+    $('#consultaFolio').value=b.dataset.pol;
+    consultarPoliza();
+    document.querySelector('.consulta-ind').scrollIntoView({behavior:'smooth',block:'start'});
+  });
+}
+
+function acLlenarFiltroValores(){
+  const fd=$('#acFiltroDim').value, sel=$('#acFiltroVal');
+  if(!fd){ sel.style.display='none'; sel.innerHTML=''; return; }
+  const prev=sel.value;
+  const vig=$('#acVig').value;
+  const cuenta=new Map();
+  DB.forEach(r=>{
+    if(vig==='activa' && r.vigenciaActiva!==true) return;
+    if(vig==='vencida' && r.vigenciaActiva!==false) return;
+    const k=acValor(fd,r); cuenta.set(k,(cuenta.get(k)||0)+1);
+  });
+  const dim=AC_DIMS[fd];
+  let ks=[...cuenta.keys()];
+  if(Array.isArray(dim.orden)) ks.sort((a,b)=>dim.orden.indexOf(a)-dim.orden.indexOf(b));
+  else if(dim.orden==='desc') ks.sort((a,b)=>b.localeCompare(a));
+  else ks.sort((a,b)=>a.localeCompare(b,'es'));
+  ks.sort((a,b)=>(a===AC_SIN_DATO)-(b===AC_SIN_DATO));
+  sel.innerHTML='<option value="">— elige —</option>'+ks.map(k=>`<option value="${rcEsc(k)}">${rcEsc(acEtiqueta(fd,k))} (${cuenta.get(k).toLocaleString('es-MX')})</option>`).join('');
+  sel.value = cuenta.has(prev) ? prev : '';
+  sel.style.display='';
+}
+
+function acExcel(){
+  if(!AC_ULTIMO){ toast('Aún no hay datos para exportar.', true); return; }
+  const R=AC_ULTIMO;
+  const cab=[['Análisis de Cartera'],[acSubtitulo()],[]];
+  const enc=[AC_DIMS[acDim].h, ...AC_ESTATUS.map(e=>e.h), 'Total', '% en atraso', 'Por cobrar (atraso)'];
+  const filaX=(f,nom)=>[nom, ...AC_ESTATUS.map(e=>f[e.k]), f.total, f.pct==null?'':Math.round(f.pct*1000)/1000, Math.round(f.porCobrar*100)/100];
+  const hojaRes=[...cab, enc, ...R.filas.map(f=>filaX(f,f.etiqueta)), filaX(R.tot,'TOTAL')];
+
+  const sel=acPolizasSeleccion();
+  const lista = sel || R.base;
+  const titDet = sel ? `Pólizas: ${acEtiqueta(acDim,acSelGrupo)} · ${acSelEst==='*'?'todas':acSelEst}` : 'Todas las pólizas del análisis';
+  const vx=(c,r)=>{ const v=c.v(r); if(c.t==='money'||c.t==='num') return v==null?'':Number(v); if(c.t==='fecha') return v||''; return v==null?'':String(v); };
+  const hojaDet=[[titDet],[acSubtitulo()],[], [...AC_COLS_DET.map(c=>c.h)], ...lista.map(r=>AC_COLS_DET.map(c=>vx(c,r)))];
+
+  const wb=XLSX.utils.book_new();
+  const w1=XLSX.utils.aoa_to_sheet(hojaRes);
+  const w2=XLSX.utils.aoa_to_sheet(hojaDet,{dateNF:'dd/mm/yyyy'});
+  w1['!cols']=[{wch:34}, ...AC_ESTATUS.map(()=>({wch:14})), {wch:10},{wch:12},{wch:18}];
+  w2['!cols']=AC_COLS_DET.map(c=>({wch:c.h==='Nombre'?34:(c.t==='txt'?20:13)}));
+  XLSX.utils.book_append_sheet(wb,w1,'Resumen');
+  XLSX.utils.book_append_sheet(wb,w2,'Pólizas');
+  XLSX.writeFile(wb, `analisis_cartera_${acDim}_${rcIso(rcDia(getHoy()))}.xlsx`);
+}
+
+function acInicializar(){
+  if(acInit) return; acInit=true;
+  $('#acDim').innerHTML=Object.entries(AC_DIMS).map(([k,d])=>`<option value="${k}">${d.h}</option>`).join('');
+  $('#acDim').value=acDim;
+  $('#acFiltroDim').innerHTML='<option value="">Sin filtro</option>'+Object.entries(AC_DIMS).map(([k,d])=>`<option value="${k}">${d.h}</option>`).join('');
+  $('#acDim').addEventListener('change',()=>{ acDim=$('#acDim').value; acSort={col:null,dir:-1}; acSelGrupo=null; acSelEst=null; acRender(); });
+  $('#acVig').addEventListener('change',()=>{ acSelGrupo=null; acSelEst=null; acLlenarFiltroValores(); acRender(); });
+  $('#acFiltroDim').addEventListener('change',()=>{ $('#acFiltroVal').value=''; acSelGrupo=null; acSelEst=null; acLlenarFiltroValores(); acRender(); });
+  $('#acFiltroVal').addEventListener('change',()=>{ acSelGrupo=null; acSelEst=null; acRender(); });
+  $('#acExcel').addEventListener('click',acExcel);
+}
+// se llama desde recalcular(): nueva carga de datos o cambio de fecha de corte
+function acRefrescar(){
+  if(!acInit) return;
+  acLlenarFiltroValores();
+  acRender();
+}
+$('#btnAnCart').addEventListener('click',()=>{
+  acVisible=!acVisible;
+  const panel=$('#anCart');
+  panel.classList.toggle('visible',acVisible);
+  $('#btnAnCart').textContent = acVisible ? '📈 Ocultar Análisis' : '📈 Análisis de Cartera';
+  if(acVisible){
+    acInicializar(); acLlenarFiltroValores(); acRender();
+    panel.scrollIntoView({behavior:'smooth',block:'start'});
+  }
+});
 </script>
 </body>
 </html>
